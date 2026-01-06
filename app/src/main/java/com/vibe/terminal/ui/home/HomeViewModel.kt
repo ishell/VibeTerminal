@@ -17,9 +17,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
+import net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
 import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.StringReader
@@ -71,7 +75,7 @@ class HomeViewModel @Inject constructor(
             val result = withContext(Dispatchers.IO) {
                 var client: SSHClient? = null
                 try {
-                    client = SSHClient().apply {
+                    client = SSHClient(DefaultConfig()).apply {
                         addHostKeyVerifier(PromiscuousVerifier())
                         connect(machine.host, machine.port)
 
@@ -80,13 +84,10 @@ class HomeViewModel @Inject constructor(
                                 authPassword(machine.username, machine.password ?: "")
                             }
                             Machine.AuthType.SSH_KEY -> {
-                                val keyProvider = OpenSSHKeyFile().apply {
-                                    if (!machine.passphrase.isNullOrBlank()) {
-                                        init(StringReader(machine.privateKey ?: ""), PasswordUtils.createOneOff(machine.passphrase.toCharArray()))
-                                    } else {
-                                        init(StringReader(machine.privateKey ?: ""), null as PasswordFinder?)
-                                    }
-                                }
+                                val keyProvider = loadKeyProvider(
+                                    machine.privateKey ?: "",
+                                    machine.passphrase
+                                )
                                 authPublickey(machine.username, keyProvider)
                             }
                         }
@@ -160,6 +161,37 @@ class HomeViewModel @Inject constructor(
     fun deleteProject(projectId: String) {
         viewModelScope.launch {
             projectRepository.deleteProject(projectId)
+        }
+    }
+
+    private fun loadKeyProvider(privateKey: String, passphrase: String?): KeyProvider {
+        val passwordFinder: PasswordFinder? = passphrase?.let {
+            PasswordUtils.createOneOff(it.toCharArray())
+        }
+
+        return when {
+            privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
+                OpenSSHKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            privateKey.contains("BEGIN RSA PRIVATE KEY") ||
+            privateKey.contains("BEGIN DSA PRIVATE KEY") ||
+            privateKey.contains("BEGIN EC PRIVATE KEY") -> {
+                PKCS8KeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            privateKey.contains("PuTTY-User-Key-File") -> {
+                PuTTYKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            else -> {
+                OpenSSHKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
         }
     }
 }

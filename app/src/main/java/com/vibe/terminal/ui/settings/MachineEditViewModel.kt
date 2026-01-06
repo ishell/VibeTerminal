@@ -16,9 +16,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
+import net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
 import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.StringReader
@@ -137,7 +141,7 @@ class MachineEditViewModel @Inject constructor(
             val result = withContext(Dispatchers.IO) {
                 var client: SSHClient? = null
                 try {
-                    client = SSHClient().apply {
+                    client = SSHClient(DefaultConfig()).apply {
                         addHostKeyVerifier(PromiscuousVerifier())
                         connect(state.host, state.port.toIntOrNull() ?: 22)
 
@@ -146,13 +150,7 @@ class MachineEditViewModel @Inject constructor(
                                 authPassword(state.username, state.password)
                             }
                             Machine.AuthType.SSH_KEY -> {
-                                val keyProvider = OpenSSHKeyFile().apply {
-                                    if (state.passphrase.isNotBlank()) {
-                                        init(StringReader(state.privateKey), PasswordUtils.createOneOff(state.passphrase.toCharArray()))
-                                    } else {
-                                        init(StringReader(state.privateKey), null as PasswordFinder?)
-                                    }
-                                }
+                                val keyProvider = loadKeyProvider(state.privateKey, state.passphrase.ifBlank { null })
                                 authPublickey(state.username, keyProvider)
                             }
                         }
@@ -183,6 +181,37 @@ class MachineEditViewModel @Inject constructor(
 
     fun dismissTestResult() {
         _uiState.update { it.copy(testStatus = TestConnectionStatus.Idle) }
+    }
+
+    private fun loadKeyProvider(privateKey: String, passphrase: String?): KeyProvider {
+        val passwordFinder: PasswordFinder? = passphrase?.let {
+            PasswordUtils.createOneOff(it.toCharArray())
+        }
+
+        return when {
+            privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
+                OpenSSHKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            privateKey.contains("BEGIN RSA PRIVATE KEY") ||
+            privateKey.contains("BEGIN DSA PRIVATE KEY") ||
+            privateKey.contains("BEGIN EC PRIVATE KEY") -> {
+                PKCS8KeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            privateKey.contains("PuTTY-User-Key-File") -> {
+                PuTTYKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            else -> {
+                OpenSSHKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+        }
     }
 }
 

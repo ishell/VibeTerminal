@@ -52,15 +52,18 @@ object SshErrorAnalyzer {
 
             // 认证失败
             message.contains("auth", ignoreCase = true) &&
-            (message.contains("fail", ignoreCase = true) || message.contains("denied", ignoreCase = true)) -> {
+            (message.contains("fail", ignoreCase = true) || message.contains("denied", ignoreCase = true)) ||
+            message.contains("exhausted available authentication", ignoreCase = true) -> {
                 SshErrorInfo(
                     title = "认证失败",
                     description = "无法使用提供的凭据登录服务器。",
                     suggestions = listOf(
                         "检查用户名是否正确",
                         "检查密码或 SSH 密钥是否正确",
-                        "确认服务器是否允许该认证方式",
-                        "如果使用密钥，确认密钥格式是否正确 (OpenSSH 格式)"
+                        "如使用SSH密钥，确认密钥格式正确 (OpenSSH格式)",
+                        "确认私钥内容完整 (包含 BEGIN/END 行)",
+                        "如果密钥有密码保护，请填写 Passphrase",
+                        "确认服务器允许该认证方式"
                     ),
                     technicalDetails = message,
                     errorCode = SshErrorCode.AUTH_FAILED

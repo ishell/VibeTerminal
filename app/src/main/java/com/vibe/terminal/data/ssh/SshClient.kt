@@ -5,11 +5,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
+import net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
 import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.InputStream
@@ -40,7 +44,7 @@ class SshClient @Inject constructor() {
         try {
             _connectionState.value = SshConnectionState.Connecting
 
-            val client = SSHClient().apply {
+            val client = SSHClient(DefaultConfig()).apply {
                 // TODO: 生产环境应该使用 known_hosts 验证
                 addHostKeyVerifier(PromiscuousVerifier())
                 connect(config.host, config.port)
@@ -50,13 +54,7 @@ class SshClient @Inject constructor() {
                         authPassword(config.username, auth.password)
                     }
                     is SshConfig.AuthMethod.PublicKey -> {
-                        val keyProvider = OpenSSHKeyFile().apply {
-                            if (auth.passphrase != null) {
-                                init(StringReader(auth.privateKey), PasswordUtils.createOneOff(auth.passphrase.toCharArray()))
-                            } else {
-                                init(StringReader(auth.privateKey), null as PasswordFinder?)
-                            }
-                        }
+                        val keyProvider = loadKeyProvider(auth.privateKey, auth.passphrase)
                         authPublickey(config.username, keyProvider)
                     }
                 }
@@ -69,6 +67,43 @@ class SshClient @Inject constructor() {
             val errorInfo = SshErrorAnalyzer.analyze(e)
             _connectionState.value = SshConnectionState.Error(errorInfo, e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * 加载SSH密钥，自动检测格式
+     */
+    private fun loadKeyProvider(privateKey: String, passphrase: String?): KeyProvider {
+        val passwordFinder: PasswordFinder? = passphrase?.let {
+            PasswordUtils.createOneOff(it.toCharArray())
+        }
+
+        // 根据密钥内容判断格式
+        return when {
+            privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
+                OpenSSHKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            privateKey.contains("BEGIN RSA PRIVATE KEY") ||
+            privateKey.contains("BEGIN DSA PRIVATE KEY") ||
+            privateKey.contains("BEGIN EC PRIVATE KEY") -> {
+                // PEM format (older OpenSSH or OpenSSL generated)
+                PKCS8KeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            privateKey.contains("PuTTY-User-Key-File") -> {
+                PuTTYKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
+            else -> {
+                // Default to OpenSSH format
+                OpenSSHKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+            }
         }
     }
 
