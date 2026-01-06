@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="terminal_background">#1E1E1E</color>
+    <color name="terminal_foreground">#D4D4D4</color>
+    <color name="accent_blue">#569CD6</color>
+    <color name="accent_green">#4EC9B0</color>
+    <color name="status_connected">#4CAF50</color>
+    <color name="status_error">#F44336</color>
+</resources>
