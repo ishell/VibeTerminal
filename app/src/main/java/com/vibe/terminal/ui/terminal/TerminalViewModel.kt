@@ -188,6 +188,22 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
+    fun reconnect() {
+        viewModelScope.launch {
+            // 先断开现有连接
+            readJob?.cancel()
+            outputStream = null
+            sshClient.disconnect()
+
+            // 重新连接
+            val project = _uiState.value.project
+            val machine = _uiState.value.machine
+            if (project != null && machine != null) {
+                connect(machine, project)
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         disconnect()

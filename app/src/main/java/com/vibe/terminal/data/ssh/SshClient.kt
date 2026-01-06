@@ -60,7 +60,8 @@ class SshClient @Inject constructor() {
             _connectionState.value = SshConnectionState.Connected
             Result.success(Unit)
         } catch (e: Exception) {
-            _connectionState.value = SshConnectionState.Error(e.message ?: "Unknown error", e)
+            val errorInfo = SshErrorAnalyzer.analyze(e)
+            _connectionState.value = SshConnectionState.Error(errorInfo, e)
             Result.failure(e)
         }
     }

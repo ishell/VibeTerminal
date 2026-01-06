@@ -1,5 +1,8 @@
 package com.vibe.terminal.ui.terminal
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,24 +16,35 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -49,11 +63,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.terminal.data.ssh.SshConnectionState
+import com.vibe.terminal.data.ssh.SshErrorInfo
 import com.vibe.terminal.terminal.renderer.TerminalColorScheme
 import com.vibe.terminal.terminal.renderer.TerminalRenderer
 import com.vibe.terminal.ui.theme.StatusConnected
@@ -155,33 +172,14 @@ fun TerminalScreen(
                 }
 
                 is SshConnectionState.Error -> {
-                    Box(
+                    val errorState = connectionState as SshConnectionState.Error
+                    ConnectionErrorView(
+                        errorInfo = errorState.errorInfo,
+                        onRetry = { viewModel.reconnect() },
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .background(Color(0xFF1E1E1E)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = null,
-                                tint = StatusError,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Connection failed",
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = (connectionState as SshConnectionState.Error).message,
-                                color = Color.Gray,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
+                    )
                 }
 
                 is SshConnectionState.Connected -> {
@@ -246,6 +244,174 @@ fun TerminalScreen(
     LaunchedEffect(connectionState) {
         if (connectionState is SshConnectionState.Connected) {
             focusRequester.requestFocus()
+        }
+    }
+}
+
+/**
+ * 连接错误显示组件
+ */
+@Composable
+private fun ConnectionErrorView(
+    errorInfo: SshErrorInfo,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDetails by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .background(Color(0xFF1E1E1E))
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // 错误图标
+        Icon(
+            Icons.Default.ErrorOutline,
+            contentDescription = null,
+            tint = StatusError,
+            modifier = Modifier.size(64.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 错误标题
+        Text(
+            text = errorInfo.title,
+            color = Color.White,
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 错误描述
+        Text(
+            text = errorInfo.description,
+            color = Color.Gray,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 建议卡片
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2D2D2D)
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Lightbulb,
+                        contentDescription = null,
+                        tint = Color(0xFFFFC107),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "可能的解决方案",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                errorInfo.suggestions.forEachIndexed { index, suggestion ->
+                    Row(
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "${index + 1}.",
+                            color = Color(0xFF4EC9B0),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.width(20.dp)
+                        )
+                        Text(
+                            text = suggestion,
+                            color = Color(0xFFCCCCCC),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 详情展开按钮
+        TextButton(
+            onClick = { showDetails = !showDetails }
+        ) {
+            Text(
+                text = if (showDetails) "隐藏详情" else "查看详情",
+                color = Color(0xFF569CD6)
+            )
+            Icon(
+                imageVector = if (showDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = Color(0xFF569CD6)
+            )
+        }
+
+        // 详情内容
+        AnimatedVisibility(
+            visible = showDetails,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF252526)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "技术详情",
+                        color = Color(0xFF808080),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorInfo.technicalDetails,
+                        color = Color(0xFFCE9178),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E1E1E))
+                            .padding(8.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // 重试按钮
+        Button(
+            onClick = onRetry,
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("重试连接")
         }
     }
 }

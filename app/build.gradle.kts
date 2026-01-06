@@ -94,6 +94,9 @@ dependencies {
 
     // SSH
     implementation(libs.sshj)
+    implementation(libs.bouncycastle.prov)
+    implementation(libs.bouncycastle.pkix)
+    implementation(libs.eddsa)
 
     // Testing
     testImplementation(libs.junit)
