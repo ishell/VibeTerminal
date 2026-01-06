@@ -9,8 +9,11 @@ import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.StringReader
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,10 +49,12 @@ class SshClient @Inject constructor() {
                         authPassword(config.username, auth.password)
                     }
                     is SshConfig.AuthMethod.PublicKey -> {
-                        val keyProvider = if (auth.passphrase != null) {
-                            loadKeys(auth.privateKey, auth.passphrase)
-                        } else {
-                            loadKeys(auth.privateKey)
+                        val keyProvider = OpenSSHKeyFile().apply {
+                            if (auth.passphrase != null) {
+                                init(StringReader(auth.privateKey), PasswordUtils.createOneOff(auth.passphrase.toCharArray()))
+                            } else {
+                                init(StringReader(auth.privateKey), null)
+                            }
                         }
                         authPublickey(config.username, keyProvider)
                     }

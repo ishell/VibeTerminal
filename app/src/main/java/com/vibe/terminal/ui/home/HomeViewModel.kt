@@ -19,6 +19,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.password.PasswordUtils
+import java.io.StringReader
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -76,10 +79,12 @@ class HomeViewModel @Inject constructor(
                                 authPassword(machine.username, machine.password ?: "")
                             }
                             Machine.AuthType.SSH_KEY -> {
-                                val keyProvider = if (!machine.passphrase.isNullOrBlank()) {
-                                    loadKeys(machine.privateKey ?: "", machine.passphrase)
-                                } else {
-                                    loadKeys(machine.privateKey ?: "")
+                                val keyProvider = OpenSSHKeyFile().apply {
+                                    if (!machine.passphrase.isNullOrBlank()) {
+                                        init(StringReader(machine.privateKey ?: ""), PasswordUtils.createOneOff(machine.passphrase.toCharArray()))
+                                    } else {
+                                        init(StringReader(machine.privateKey ?: ""), null)
+                                    }
                                 }
                                 authPublickey(machine.username, keyProvider)
                             }

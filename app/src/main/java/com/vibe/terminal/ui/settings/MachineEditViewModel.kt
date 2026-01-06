@@ -18,6 +18,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.password.PasswordUtils
+import java.io.StringReader
 import java.util.UUID
 import javax.inject.Inject
 
@@ -142,10 +145,12 @@ class MachineEditViewModel @Inject constructor(
                                 authPassword(state.username, state.password)
                             }
                             Machine.AuthType.SSH_KEY -> {
-                                val keyProvider = if (state.passphrase.isNotBlank()) {
-                                    loadKeys(state.privateKey, state.passphrase)
-                                } else {
-                                    loadKeys(state.privateKey)
+                                val keyProvider = OpenSSHKeyFile().apply {
+                                    if (state.passphrase.isNotBlank()) {
+                                        init(StringReader(state.privateKey), PasswordUtils.createOneOff(state.passphrase.toCharArray()))
+                                    } else {
+                                        init(StringReader(state.privateKey), null)
+                                    }
                                 }
                                 authPublickey(state.username, keyProvider)
                             }
