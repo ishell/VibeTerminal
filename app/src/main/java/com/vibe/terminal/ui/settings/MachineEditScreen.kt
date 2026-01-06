@@ -3,6 +3,7 @@ package com.vibe.terminal.ui.settings
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,10 +19,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -241,12 +247,113 @@ fun MachineEditScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            Button(
-                onClick = { viewModel.save(onNavigateBack) },
-                enabled = uiState.isValid && !uiState.isSaving,
-                modifier = Modifier.fillMaxWidth()
+            // Test Connection Result
+            when (val testStatus = uiState.testStatus) {
+                is TestConnectionStatus.Success -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "Connection successful!",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                is TestConnectionStatus.Failed -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Error,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    testStatus.errorInfo.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                testStatus.errorInfo.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            if (testStatus.errorInfo.suggestions.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                testStatus.errorInfo.suggestions.forEach { suggestion ->
+                                    Text(
+                                        "• $suggestion",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                else -> {}
+            }
+
+            // Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(if (uiState.isSaving) "Saving..." else "Save")
+                OutlinedButton(
+                    onClick = { viewModel.testConnection() },
+                    enabled = uiState.isValid && uiState.testStatus !is TestConnectionStatus.Testing,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (uiState.testStatus is TestConnectionStatus.Testing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Testing...")
+                    } else {
+                        Text("Test Connection")
+                    }
+                }
+
+                Button(
+                    onClick = { viewModel.save(onNavigateBack) },
+                    enabled = uiState.isValid && !uiState.isSaving,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (uiState.isSaving) "Saving..." else "Save")
+                }
             }
         }
     }

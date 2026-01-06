@@ -3,14 +3,21 @@ package com.vibe.terminal.ui.settings
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.terminal.data.ssh.SshConfig
+import com.vibe.terminal.data.ssh.SshErrorAnalyzer
+import com.vibe.terminal.data.ssh.SshErrorInfo
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.repository.MachineRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import java.util.UUID
 import javax.inject.Inject
 
@@ -114,6 +121,63 @@ class MachineEditViewModel @Inject constructor(
             onSuccess()
         }
     }
+
+    fun testConnection() {
+        val state = _uiState.value
+
+        if (!state.isValid) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(testStatus = TestConnectionStatus.Testing) }
+
+            val result = withContext(Dispatchers.IO) {
+                var client: SSHClient? = null
+                try {
+                    client = SSHClient().apply {
+                        addHostKeyVerifier(PromiscuousVerifier())
+                        connect(state.host, state.port.toIntOrNull() ?: 22)
+
+                        when (state.authType) {
+                            Machine.AuthType.PASSWORD -> {
+                                authPassword(state.username, state.password)
+                            }
+                            Machine.AuthType.SSH_KEY -> {
+                                val keyProvider = if (state.passphrase.isNotBlank()) {
+                                    loadKeys(state.privateKey, state.passphrase)
+                                } else {
+                                    loadKeys(state.privateKey)
+                                }
+                                authPublickey(state.username, keyProvider)
+                            }
+                        }
+                    }
+                    Result.success(Unit)
+                } catch (e: Exception) {
+                    Result.failure(e)
+                } finally {
+                    try {
+                        client?.disconnect()
+                    } catch (_: Exception) {
+                        // Ignore disconnect errors
+                    }
+                }
+            }
+
+            result.fold(
+                onSuccess = {
+                    _uiState.update { it.copy(testStatus = TestConnectionStatus.Success) }
+                },
+                onFailure = { error ->
+                    val errorInfo = SshErrorAnalyzer.analyze(error)
+                    _uiState.update { it.copy(testStatus = TestConnectionStatus.Failed(errorInfo)) }
+                }
+            )
+        }
+    }
+
+    fun dismissTestResult() {
+        _uiState.update { it.copy(testStatus = TestConnectionStatus.Idle) }
+    }
 }
 
 data class MachineEditUiState(
@@ -126,7 +190,8 @@ data class MachineEditUiState(
     val privateKey: String = "",
     val passphrase: String = "",
     val isLoading: Boolean = false,
-    val isSaving: Boolean = false
+    val isSaving: Boolean = false,
+    val testStatus: TestConnectionStatus = TestConnectionStatus.Idle
 ) {
     val isValid: Boolean
         get() = name.isNotBlank() &&
@@ -137,4 +202,11 @@ data class MachineEditUiState(
                     Machine.AuthType.PASSWORD -> password.isNotBlank()
                     Machine.AuthType.SSH_KEY -> privateKey.isNotBlank()
                 }
+}
+
+sealed class TestConnectionStatus {
+    data object Idle : TestConnectionStatus()
+    data object Testing : TestConnectionStatus()
+    data object Success : TestConnectionStatus()
+    data class Failed(val errorInfo: SshErrorInfo) : TestConnectionStatus()
 }
