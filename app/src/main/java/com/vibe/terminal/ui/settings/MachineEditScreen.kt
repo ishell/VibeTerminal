@@ -3,6 +3,7 @@ package com.vibe.terminal.ui.settings
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -29,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -278,6 +282,8 @@ fun MachineEditScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 is TestConnectionStatus.Failed -> {
+                    var showDetails by remember { mutableStateOf(false) }
+
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
@@ -315,6 +321,44 @@ fun MachineEditScreen(
                                         "• $suggestion",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+
+                            // Expandable technical details
+                            if (testStatus.errorInfo.technicalDetails.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.2f)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showDetails = !showDetails },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Technical Details",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        if (showDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = if (showDetails) "Hide" else "Show",
+                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+
+                                if (showDetails) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        testStatus.errorInfo.technicalDetails,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                                     )
                                 }
                             }
