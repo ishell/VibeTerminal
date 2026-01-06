@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.StringReader
 import java.util.UUID
@@ -149,7 +150,7 @@ class MachineEditViewModel @Inject constructor(
                                     if (state.passphrase.isNotBlank()) {
                                         init(StringReader(state.privateKey), PasswordUtils.createOneOff(state.passphrase.toCharArray()))
                                     } else {
-                                        init(StringReader(state.privateKey), null)
+                                        init(StringReader(state.privateKey), null as PasswordFinder?)
                                     }
                                 }
                                 authPublickey(state.username, keyProvider)

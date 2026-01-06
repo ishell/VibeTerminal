@@ -10,6 +10,7 @@ import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.InputStream
 import java.io.OutputStream
@@ -53,7 +54,7 @@ class SshClient @Inject constructor() {
                             if (auth.passphrase != null) {
                                 init(StringReader(auth.privateKey), PasswordUtils.createOneOff(auth.passphrase.toCharArray()))
                             } else {
-                                init(StringReader(auth.privateKey), null)
+                                init(StringReader(auth.privateKey), null as PasswordFinder?)
                             }
                         }
                         authPublickey(config.username, keyProvider)

@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
+import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.StringReader
 import java.util.UUID
@@ -83,7 +84,7 @@ class HomeViewModel @Inject constructor(
                                     if (!machine.passphrase.isNullOrBlank()) {
                                         init(StringReader(machine.privateKey ?: ""), PasswordUtils.createOneOff(machine.passphrase.toCharArray()))
                                     } else {
-                                        init(StringReader(machine.privateKey ?: ""), null)
+                                        init(StringReader(machine.privateKey ?: ""), null as PasswordFinder?)
                                     }
                                 }
                                 authPublickey(machine.username, keyProvider)
