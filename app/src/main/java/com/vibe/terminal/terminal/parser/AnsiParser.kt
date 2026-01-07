@@ -13,6 +13,11 @@ class AnsiParser(
     private val intermediates = StringBuilder()
     private val oscData = StringBuilder()
 
+    // UTF-8 decoding state
+    private var utf8State = Utf8State.START
+    private var utf8Codepoint = 0
+    private var utf8BytesRemaining = 0
+
     /**
      * 处理输入数据
      */
@@ -27,8 +32,81 @@ class AnsiParser(
     }
 
     private fun processByte(byte: Int) {
+        // Handle UTF-8 multi-byte sequences in GROUND state
+        if (state == State.GROUND) {
+            when (utf8State) {
+                Utf8State.START -> {
+                    when {
+                        // ASCII control characters and printable chars
+                        byte < 0x80 -> handleGround(byte)
+                        // UTF-8 2-byte sequence (110xxxxx)
+                        byte in 0xC0..0xDF -> {
+                            utf8Codepoint = byte and 0x1F
+                            utf8BytesRemaining = 1
+                            utf8State = Utf8State.CONTINUE
+                        }
+                        // UTF-8 3-byte sequence (1110xxxx)
+                        byte in 0xE0..0xEF -> {
+                            utf8Codepoint = byte and 0x0F
+                            utf8BytesRemaining = 2
+                            utf8State = Utf8State.CONTINUE
+                        }
+                        // UTF-8 4-byte sequence (11110xxx)
+                        byte in 0xF0..0xF7 -> {
+                            utf8Codepoint = byte and 0x07
+                            utf8BytesRemaining = 3
+                            utf8State = Utf8State.CONTINUE
+                        }
+                        // Invalid UTF-8 lead byte or continuation byte without lead
+                        else -> {
+                            // Treat as Latin-1 for compatibility
+                            handler.printChar(byte.toChar())
+                        }
+                    }
+                }
+                Utf8State.CONTINUE -> {
+                    if (byte in 0x80..0xBF) {
+                        // Valid continuation byte (10xxxxxx)
+                        utf8Codepoint = (utf8Codepoint shl 6) or (byte and 0x3F)
+                        utf8BytesRemaining--
+                        if (utf8BytesRemaining == 0) {
+                            // Complete UTF-8 sequence
+                            emitCodepoint(utf8Codepoint)
+                            utf8State = Utf8State.START
+                            utf8Codepoint = 0
+                        }
+                    } else {
+                        // Invalid continuation - reset and reprocess
+                        utf8State = Utf8State.START
+                        utf8Codepoint = 0
+                        utf8BytesRemaining = 0
+                        processByte(byte)
+                    }
+                }
+            }
+        } else {
+            // In escape sequence states, handle bytes directly
+            handleEscapeSequence(byte)
+        }
+    }
+
+    private fun emitCodepoint(codepoint: Int) {
+        if (codepoint <= 0xFFFF) {
+            // BMP character
+            handler.printChar(codepoint.toChar())
+        } else {
+            // Supplementary character - emit as surrogate pair
+            val adjusted = codepoint - 0x10000
+            val highSurrogate = ((adjusted shr 10) and 0x3FF) + 0xD800
+            val lowSurrogate = (adjusted and 0x3FF) + 0xDC00
+            handler.printChar(highSurrogate.toChar())
+            handler.printChar(lowSurrogate.toChar())
+        }
+    }
+
+    private fun handleEscapeSequence(byte: Int) {
         when (state) {
-            State.GROUND -> handleGround(byte)
+            State.GROUND -> { /* handled above */ }
             State.ESCAPE -> handleEscape(byte)
             State.CSI_ENTRY -> handleCsiEntry(byte)
             State.CSI_PARAM -> handleCsiParam(byte)
@@ -48,7 +126,6 @@ class AnsiParser(
             0x0A, 0x0B, 0x0C -> handler.lineFeed()
             0x0D -> handler.carriageReturn()
             in 0x20..0x7E -> handler.printChar(byte.toChar())
-            in 0x80..0xFF -> handler.printChar(byte.toChar()) // Extended ASCII
         }
     }
 
@@ -295,6 +372,11 @@ class AnsiParser(
         CSI_PARAM,
         CSI_INTERMEDIATE,
         OSC_STRING
+    }
+
+    private enum class Utf8State {
+        START,
+        CONTINUE
     }
 }
 
