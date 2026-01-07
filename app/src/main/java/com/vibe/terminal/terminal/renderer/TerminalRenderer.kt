@@ -33,11 +33,11 @@ import kotlinx.coroutines.delay
 
 /**
  * Terminal font family with Nerd Font support
- * Uses JetBrains Mono Nerd Font for icons
+ * Uses Iosevka Nerd Font for icons and symbols
  */
 val TerminalFontFamily = FontFamily(
-    Font(R.font.jetbrains_mono_nerd, FontWeight.Normal),
-    Font(R.font.jetbrains_mono_nerd_bold, FontWeight.Bold)
+    Font(R.font.iosevka_nerd, FontWeight.Normal),
+    Font(R.font.iosevka_nerd_bold, FontWeight.Bold)
 )
 
 /**
@@ -75,13 +75,14 @@ private fun isWideChar(char: Char): Boolean {
 
 /**
  * Get the appropriate font family for a character
- * Uses system default font for CJK characters (has Noto Sans CJK)
+ * Uses system default font only for CJK characters (needs Noto Sans CJK)
+ * Iosevka Nerd Font has extensive Unicode coverage for other symbols
  */
 private fun getFontForChar(char: Char): FontFamily {
     return if (isWideChar(char)) {
-        FontFamily.Default  // Use system default font for CJK (includes Noto Sans CJK)
+        FontFamily.Default  // CJK uses system font
     } else {
-        TerminalFontFamily
+        TerminalFontFamily  // Iosevka has good symbol coverage
     }
 }
 

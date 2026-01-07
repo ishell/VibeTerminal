@@ -61,6 +61,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -197,7 +200,7 @@ fun TerminalScreen(
                         }
                     )
 
-                    // Hidden input field for keyboard
+                    // Hidden input field for keyboard (supports IME for Chinese, etc.)
                     BasicTextField(
                         value = inputText,
                         onValueChange = { newText ->
@@ -209,10 +212,47 @@ fun TerminalScreen(
                         },
                         modifier = Modifier
                             .focusRequester(focusRequester)
-                            .size(1.dp),
+                            .size(1.dp)
+                            .onKeyEvent { keyEvent ->
+                                when (keyEvent.key) {
+                                    Key.Backspace -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_BACKSPACE)
+                                        true
+                                    }
+                                    Key.Enter -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_ENTER)
+                                        true
+                                    }
+                                    Key.DirectionUp -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_UP)
+                                        true
+                                    }
+                                    Key.DirectionDown -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_DOWN)
+                                        true
+                                    }
+                                    Key.DirectionLeft -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_LEFT)
+                                        true
+                                    }
+                                    Key.DirectionRight -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_RIGHT)
+                                        true
+                                    }
+                                    Key.Tab -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_TAB)
+                                        true
+                                    }
+                                    Key.Escape -> {
+                                        viewModel.sendKey(TerminalViewModel.KEY_ESCAPE)
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            },
                         textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
                         cursorBrush = SolidColor(Color.Transparent),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                     )
 
                     // Quick keyboard bar
