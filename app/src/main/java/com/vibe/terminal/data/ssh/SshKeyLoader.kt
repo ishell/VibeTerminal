@@ -1,5 +1,7 @@
 package com.vibe.terminal.data.ssh
 
+import android.util.Log
+import com.hierynomus.sshj.userauth.keyprovider.OpenSSHKeyV1KeyFile
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
 import net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
@@ -9,111 +11,122 @@ import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.File
 import java.io.StringReader
 
+private const val TAG = "SshKeyLoader"
+
 /**
  * SSH密钥加载结果
- *
- * @param keyProvider 密钥提供者
- * @param tempFile 临时文件（如果有的话），需要在使用完密钥后删除
  */
 data class SshKeyLoadResult(
     val keyProvider: KeyProvider,
     val tempFile: File? = null
 ) {
-    /**
-     * 清理临时文件
-     */
     fun cleanup() {
         tempFile?.let { file ->
             try {
                 if (file.exists()) {
                     file.delete()
                 }
-            } catch (_: Exception) {
-                // 忽略删除错误
-            }
+            } catch (_: Exception) { }
         }
     }
 }
 
 /**
  * SSH密钥加载器
- *
- * 自动检测密钥格式并加载
  */
 object SshKeyLoader {
 
     /**
      * 加载SSH密钥
-     *
-     * 注意：对于新版OpenSSH格式密钥，会创建临时文件，
-     * 调用者需要在认证完成后调用 SshKeyLoadResult.cleanup() 来清理
-     *
-     * @param privateKey 私钥内容
-     * @param passphrase 密钥密码（可选）
-     * @return 密钥加载结果
      */
     fun loadKey(privateKey: String, passphrase: String?): SshKeyLoadResult {
+        Log.d(TAG, "Loading SSH key, length=${privateKey.length}, hasPassphrase=${passphrase != null}")
+
         val passwordFinder: PasswordFinder? = passphrase?.let {
             PasswordUtils.createOneOff(it.toCharArray())
         }
 
+        val keyType = when {
+            privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> "OpenSSH"
+            privateKey.contains("BEGIN RSA PRIVATE KEY") -> "RSA-PEM"
+            privateKey.contains("BEGIN DSA PRIVATE KEY") -> "DSA-PEM"
+            privateKey.contains("BEGIN EC PRIVATE KEY") -> "EC-PEM"
+            privateKey.contains("PuTTY-User-Key-File") -> "PuTTY"
+            else -> "Unknown"
+        }
+        Log.d(TAG, "Detected key type: $keyType")
+
         return when {
             privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
-                // 新版OpenSSH格式需要通过临时文件加载
-                // OpenSSHKeyFile是懒加载的，需要保留文件直到认证完成
+                // 新版OpenSSH格式 (OpenSSH 7.8+)
                 val keyFile = File.createTempFile("ssh_key_", ".tmp")
+                Log.d(TAG, "Created temp file: ${keyFile.absolutePath}")
+
                 keyFile.writeText(privateKey)
                 keyFile.setReadable(false, false)
                 keyFile.setReadable(true, true)
-                SshKeyLoadResult(
-                    keyProvider = OpenSSHKeyFile().apply { init(keyFile, passwordFinder) },
-                    tempFile = keyFile
-                )
+
+                val keyProvider = OpenSSHKeyV1KeyFile().apply {
+                    init(keyFile, passwordFinder)
+                }
+
+                // 立即尝试解析密钥，捕获任何错误
+                try {
+                    val privateKeyObj = keyProvider.private
+                    val publicKeyObj = keyProvider.public
+                    Log.d(TAG, "Key parsed successfully: private=${privateKeyObj?.algorithm}, public=${publicKeyObj?.algorithm}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to parse OpenSSH key: ${e.javaClass.simpleName}: ${e.message}", e)
+                    keyFile.delete()
+                    throw RuntimeException("Failed to parse OpenSSH private key: ${e.message}", e)
+                }
+
+                SshKeyLoadResult(keyProvider = keyProvider, tempFile = keyFile)
             }
             privateKey.contains("BEGIN RSA PRIVATE KEY") ||
             privateKey.contains("BEGIN DSA PRIVATE KEY") ||
             privateKey.contains("BEGIN EC PRIVATE KEY") -> {
-                // PEM format - 可以直接从字符串加载
-                SshKeyLoadResult(
-                    keyProvider = PKCS8KeyFile().apply {
-                        init(StringReader(privateKey), passwordFinder)
-                    }
-                )
+                val keyProvider = PKCS8KeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+
+                try {
+                    val privateKeyObj = keyProvider.private
+                    Log.d(TAG, "PEM key parsed successfully: ${privateKeyObj?.algorithm}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to parse PEM key: ${e.message}", e)
+                    throw RuntimeException("Failed to parse PEM private key: ${e.message}", e)
+                }
+
+                SshKeyLoadResult(keyProvider = keyProvider)
             }
             privateKey.contains("PuTTY-User-Key-File") -> {
-                SshKeyLoadResult(
-                    keyProvider = PuTTYKeyFile().apply {
-                        init(StringReader(privateKey), passwordFinder)
-                    }
-                )
+                val keyProvider = PuTTYKeyFile().apply {
+                    init(StringReader(privateKey), passwordFinder)
+                }
+                SshKeyLoadResult(keyProvider = keyProvider)
             }
             else -> {
-                // 默认用临时文件方式，更兼容
                 val keyFile = File.createTempFile("ssh_key_", ".tmp")
                 keyFile.writeText(privateKey)
                 keyFile.setReadable(false, false)
                 keyFile.setReadable(true, true)
-                SshKeyLoadResult(
-                    keyProvider = OpenSSHKeyFile().apply { init(keyFile, passwordFinder) },
-                    tempFile = keyFile
-                )
-            }
-        }
-    }
 
-    /**
-     * 使用密钥执行操作，自动处理临时文件清理
-     */
-    inline fun <T> withKey(
-        privateKey: String,
-        passphrase: String?,
-        block: (KeyProvider) -> T
-    ): T {
-        val result = loadKey(privateKey, passphrase)
-        return try {
-            block(result.keyProvider)
-        } finally {
-            result.cleanup()
+                val keyProvider = OpenSSHKeyFile().apply {
+                    init(keyFile, passwordFinder)
+                }
+
+                try {
+                    keyProvider.private
+                    Log.d(TAG, "Unknown format key parsed as OpenSSH")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to parse unknown key format: ${e.message}", e)
+                    keyFile.delete()
+                    throw RuntimeException("Failed to parse private key: ${e.message}", e)
+                }
+
+                SshKeyLoadResult(keyProvider = keyProvider, tempFile = keyFile)
+            }
         }
     }
 }
