@@ -81,8 +81,18 @@ class SshClient @Inject constructor() {
         // 根据密钥内容判断格式
         return when {
             privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
-                OpenSSHKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
+                // 新版OpenSSH格式需要通过临时文件加载
+                // sshj的Reader方式对新格式支持不完善
+                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
+                try {
+                    tempFile.writeText(privateKey)
+                    tempFile.setReadable(false, false)
+                    tempFile.setReadable(true, true)
+                    OpenSSHKeyFile().apply {
+                        init(tempFile, passwordFinder)
+                    }
+                } finally {
+                    tempFile.delete()
                 }
             }
             privateKey.contains("BEGIN RSA PRIVATE KEY") ||
@@ -99,9 +109,17 @@ class SshClient @Inject constructor() {
                 }
             }
             else -> {
-                // Default to OpenSSH format
-                OpenSSHKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
+                // 默认也用临时文件方式，更兼容
+                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
+                try {
+                    tempFile.writeText(privateKey)
+                    tempFile.setReadable(false, false)
+                    tempFile.setReadable(true, true)
+                    OpenSSHKeyFile().apply {
+                        init(tempFile, passwordFinder)
+                    }
+                } finally {
+                    tempFile.delete()
                 }
             }
         }

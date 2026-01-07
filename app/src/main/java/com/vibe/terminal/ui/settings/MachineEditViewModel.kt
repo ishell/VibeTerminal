@@ -190,8 +190,16 @@ class MachineEditViewModel @Inject constructor(
 
         return when {
             privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
-                OpenSSHKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
+                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
+                try {
+                    tempFile.writeText(privateKey)
+                    tempFile.setReadable(false, false)
+                    tempFile.setReadable(true, true)
+                    OpenSSHKeyFile().apply {
+                        init(tempFile, passwordFinder)
+                    }
+                } finally {
+                    tempFile.delete()
                 }
             }
             privateKey.contains("BEGIN RSA PRIVATE KEY") ||
@@ -207,8 +215,16 @@ class MachineEditViewModel @Inject constructor(
                 }
             }
             else -> {
-                OpenSSHKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
+                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
+                try {
+                    tempFile.writeText(privateKey)
+                    tempFile.setReadable(false, false)
+                    tempFile.setReadable(true, true)
+                    OpenSSHKeyFile().apply {
+                        init(tempFile, passwordFinder)
+                    }
+                } finally {
+                    tempFile.delete()
                 }
             }
         }

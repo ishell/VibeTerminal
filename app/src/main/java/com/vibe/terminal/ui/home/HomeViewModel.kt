@@ -95,21 +95,28 @@ class HomeViewModel @Inject constructor(
 
                     // Execute zellij list-sessions
                     val session = client.startSession()
-                    val command = session.exec("zellij list-sessions 2>/dev/null || echo ''")
+                    val command = session.exec("zellij list-sessions -n 2>/dev/null || zellij list-sessions 2>/dev/null || echo ''")
                     command.join(10, TimeUnit.SECONDS)
 
                     val output = command.inputStream.bufferedReader().readText()
                     session.close()
 
                     // Parse session names (one per line, filter empty lines)
+                    // Strip ANSI escape codes and clean up output
+                    val ansiRegex = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
                     val sessions = output.lines()
-                        .map { it.trim() }
+                        .map { line ->
+                            // Remove ANSI escape codes
+                            ansiRegex.replace(line, "").trim()
+                        }
                         .filter { it.isNotBlank() && !it.contains("No active sessions") }
                         .map { line ->
                             // zellij list-sessions format: "session_name [Created ... ago]" or just "session_name"
-                            line.split(" ").firstOrNull()?.trim() ?: line
+                            // Also handle "(current)" suffix
+                            line.split(" ").firstOrNull()?.trim()?.removeSuffix("(current)") ?: line
                         }
-                        .filter { it.isNotBlank() }
+                        .filter { it.isNotBlank() && !it.startsWith("[") }
+                        .distinct()
 
                     Result.success(sessions)
                 } catch (e: Exception) {
@@ -171,8 +178,16 @@ class HomeViewModel @Inject constructor(
 
         return when {
             privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
-                OpenSSHKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
+                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
+                try {
+                    tempFile.writeText(privateKey)
+                    tempFile.setReadable(false, false)
+                    tempFile.setReadable(true, true)
+                    OpenSSHKeyFile().apply {
+                        init(tempFile, passwordFinder)
+                    }
+                } finally {
+                    tempFile.delete()
                 }
             }
             privateKey.contains("BEGIN RSA PRIVATE KEY") ||
@@ -188,8 +203,16 @@ class HomeViewModel @Inject constructor(
                 }
             }
             else -> {
-                OpenSSHKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
+                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
+                try {
+                    tempFile.writeText(privateKey)
+                    tempFile.setReadable(false, false)
+                    tempFile.setReadable(true, true)
+                    OpenSSHKeyFile().apply {
+                        init(tempFile, passwordFinder)
+                    }
+                } finally {
+                    tempFile.delete()
                 }
             }
         }
