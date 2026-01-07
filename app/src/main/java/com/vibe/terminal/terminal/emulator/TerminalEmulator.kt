@@ -32,6 +32,15 @@ class TerminalEmulator(
     private val _updateSignal = MutableStateFlow(0L)
     val updateSignal: StateFlow<Long> = _updateSignal.asStateFlow()
 
+    // 视图滚动偏移 (0 = 底部/当前屏幕, 正数 = 向上滚动查看历史)
+    private var _scrollOffset = 0
+    val scrollOffset: Int get() = _scrollOffset
+    val maxScrollOffset: Int get() = buffer.getScrollbackSize()
+
+    // Alternate screen mode (用于 vim, zellij, tmux 等全屏应用)
+    private var _alternateScreenMode = false
+    val isAlternateScreenMode: Boolean get() = _alternateScreenMode
+
     // 响应数据 (需要发送回服务器的)
     private val _responseData = MutableStateFlow<ByteArray?>(null)
     val responseData: StateFlow<ByteArray?> = _responseData.asStateFlow()
@@ -56,13 +65,58 @@ class TerminalEmulator(
     }
 
     /**
-     * 获取单元格
+     * 获取单元格 (考虑滚动偏移)
      */
     fun getCell(row: Int, col: Int): TerminalCell {
         return synchronized(buffer) {
-            buffer.getCell(row, col)
+            if (_scrollOffset == 0) {
+                buffer.getCell(row, col)
+            } else {
+                // 计算实际行位置
+                val scrollbackSize = buffer.getScrollbackSize()
+                val actualRow = row - _scrollOffset
+
+                if (actualRow < 0) {
+                    // 在滚动历史中
+                    val scrollbackIndex = scrollbackSize + actualRow
+                    val scrollbackRow = buffer.getScrollbackLine(scrollbackIndex)
+                    scrollbackRow?.get(col) ?: TerminalCell.EMPTY
+                } else {
+                    // 在当前屏幕中
+                    buffer.getCell(actualRow, col)
+                }
+            }
         }
     }
+
+    /**
+     * 滚动视图 (用于手势滚动查看历史)
+     * @param delta 正数向上滚动(查看历史), 负数向下滚动(回到当前)
+     */
+    fun scrollView(delta: Int) {
+        synchronized(buffer) {
+            val newOffset = (_scrollOffset + delta).coerceIn(0, buffer.getScrollbackSize())
+            if (newOffset != _scrollOffset) {
+                _scrollOffset = newOffset
+                notifyUpdate()
+            }
+        }
+    }
+
+    /**
+     * 重置滚动位置到底部
+     */
+    fun resetScroll() {
+        if (_scrollOffset != 0) {
+            _scrollOffset = 0
+            notifyUpdate()
+        }
+    }
+
+    /**
+     * 是否正在查看历史
+     */
+    val isScrolledBack: Boolean get() = _scrollOffset > 0
 
     /**
      * 调整大小
@@ -331,8 +385,13 @@ class TerminalEmulator(
             25 -> {
                 // 光标显示/隐藏
             }
-            1049 -> {
+            47, 1047, 1049 -> {
                 // 替代屏幕缓冲区
+                _alternateScreenMode = enabled
+                // 进入/退出 alternate screen 时重置滚动位置
+                if (enabled) {
+                    _scrollOffset = 0
+                }
             }
         }
     }

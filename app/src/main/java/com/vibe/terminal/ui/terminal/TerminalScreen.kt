@@ -197,7 +197,8 @@ fun TerminalScreen(
                         onTap = {
                             focusRequester.requestFocus()
                             keyboardController?.show()
-                        }
+                        },
+                        onSendInput = viewModel::sendInput
                     )
 
                     // Hidden input field for keyboard (supports IME for Chinese, etc.)

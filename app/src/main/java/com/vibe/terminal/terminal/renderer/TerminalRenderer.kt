@@ -2,11 +2,13 @@ package com.vibe.terminal.terminal.renderer
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,7 +97,8 @@ fun TerminalRenderer(
     colorScheme: TerminalColorScheme = TerminalColorScheme.Dark,
     fontSize: Float = 14f,
     modifier: Modifier = Modifier,
-    onTap: () -> Unit = {}
+    onTap: () -> Unit = {},
+    onSendInput: (String) -> Unit = {}  // 用于发送方向键等输入
 ) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -130,12 +133,58 @@ fun TerminalRenderer(
         }
     }
 
+    // 滚动累积量
+    var dragAccumulator by remember { mutableFloatStateOf(0f) }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .background(colorScheme.background)
+            .pointerInput(charSize) {
+                detectDragGestures(
+                    onDragStart = { dragAccumulator = 0f },
+                    onDragEnd = {
+                        // 拖动结束时，如果有小幅移动也处理
+                        dragAccumulator = 0f
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        // 累积垂直拖动距离
+                        dragAccumulator += dragAmount.y
+
+                        // 每移动2行高度，触发一次滚动
+                        val lineHeight = charSize.height
+                        val scrollThreshold = lineHeight * 2
+                        if (lineHeight > 0 && scrollThreshold > 0) {
+                            val scrollCount = (dragAccumulator / scrollThreshold).toInt()
+                            if (scrollCount != 0) {
+                                if (emulator.isAlternateScreenMode) {
+                                    // 在 alternate screen mode 中，发送鼠标滚轮事件
+                                    // SGR 编码: \x1b[<button;x;yM  (button: 64=wheel up, 65=wheel down)
+                                    val wheelButton = if (scrollCount > 0) 64 else 65
+                                    repeat(kotlin.math.abs(scrollCount)) {
+                                        // 发送鼠标滚轮事件 (位置设为中心)
+                                        onSendInput("\u001b[<$wheelButton;40;12M")
+                                    }
+                                } else {
+                                    // 普通模式下滚动历史缓冲区
+                                    emulator.scrollView(scrollCount * 2)
+                                }
+                                dragAccumulator -= scrollCount * scrollThreshold
+                            }
+                        }
+                    }
+                )
+            }
             .pointerInput(Unit) {
-                detectTapGestures(onTap = { onTap() })
+                detectTapGestures(
+                    onTap = {
+                        if (emulator.isScrolledBack) {
+                            emulator.resetScroll()
+                        }
+                        onTap()
+                    }
+                )
             }
     ) {
         // 触发重绘
@@ -244,8 +293,8 @@ private fun DrawScope.drawTerminal(
         }
     }
 
-    // 绘制光标
-    if (cursorVisible) {
+    // 绘制光标 (只在没有滚动查看历史时显示)
+    if (cursorVisible && !emulator.isScrolledBack) {
         val cursorX = emulator.cursorCol * charSize.width
         val cursorY = emulator.cursorRow * charSize.height
 
