@@ -103,14 +103,29 @@ private fun DrawScope.drawTerminal(
     fontSize: Float,
     cursorVisible: Boolean
 ) {
+    // 确保画布有有效尺寸
+    val canvasWidth = size.width
+    val canvasHeight = size.height
+    if (canvasWidth <= 0 || canvasHeight <= 0 || charSize.width <= 0 || charSize.height <= 0) {
+        return
+    }
+
     val rows = emulator.rows
     val cols = emulator.columns
 
     for (row in 0 until rows) {
+        val y = row * charSize.height
+        // 跳过超出画布的行
+        if (y >= canvasHeight) break
+        if (y + charSize.height < 0) continue
+
         for (col in 0 until cols) {
-            val cell = emulator.getCell(row, col)
             val x = col * charSize.width
-            val y = row * charSize.height
+            // 跳过超出画布的列
+            if (x >= canvasWidth) break
+            if (x + charSize.width < 0) continue
+
+            val cell = emulator.getCell(row, col)
 
             // 绘制背景
             val bgColor = when (val bg = cell.attribute.backgroundColor) {
@@ -127,27 +142,31 @@ private fun DrawScope.drawTerminal(
                 )
             }
 
-            // 绘制字符
+            // 绘制字符 - 确保有足够空间
             if (cell.character != ' ' && cell.character != '\u0000') {
-                val fgColor = when (val fg = cell.attribute.foregroundColor) {
-                    is TerminalColor.Default -> colorScheme.foreground
-                    is TerminalColor.Indexed -> getIndexedColor(fg.index, colorScheme)
-                    is TerminalColor.TrueColor -> Color(fg.r, fg.g, fg.b)
+                // 只在有足够空间时绘制文本
+                val availableWidth = canvasWidth - x
+                if (availableWidth > 0) {
+                    val fgColor = when (val fg = cell.attribute.foregroundColor) {
+                        is TerminalColor.Default -> colorScheme.foreground
+                        is TerminalColor.Indexed -> getIndexedColor(fg.index, colorScheme)
+                        is TerminalColor.TrueColor -> Color(fg.r, fg.g, fg.b)
+                    }
+
+                    val style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = fontSize.sp,
+                        fontWeight = if (cell.attribute.bold) FontWeight.Bold else FontWeight.Normal,
+                        color = fgColor
+                    )
+
+                    drawText(
+                        textMeasurer = textMeasurer,
+                        text = cell.character.toString(),
+                        style = style,
+                        topLeft = Offset(x, y)
+                    )
                 }
-
-                val style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = fontSize.sp,
-                    fontWeight = if (cell.attribute.bold) FontWeight.Bold else FontWeight.Normal,
-                    color = fgColor
-                )
-
-                drawText(
-                    textMeasurer = textMeasurer,
-                    text = cell.character.toString(),
-                    style = style,
-                    topLeft = Offset(x, y)
-                )
             }
         }
     }
@@ -157,12 +176,15 @@ private fun DrawScope.drawTerminal(
         val cursorX = emulator.cursorCol * charSize.width
         val cursorY = emulator.cursorRow * charSize.height
 
-        drawRect(
-            color = colorScheme.cursor,
-            topLeft = Offset(cursorX, cursorY),
-            size = Size(charSize.width, charSize.height),
-            alpha = 0.7f
-        )
+        // 只在画布内绘制光标
+        if (cursorX >= 0 && cursorX < canvasWidth && cursorY >= 0 && cursorY < canvasHeight) {
+            drawRect(
+                color = colorScheme.cursor,
+                topLeft = Offset(cursorX, cursorY),
+                size = Size(charSize.width, charSize.height),
+                alpha = 0.7f
+            )
+        }
     }
 }
 
