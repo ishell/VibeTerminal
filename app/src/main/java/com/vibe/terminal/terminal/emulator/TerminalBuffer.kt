@@ -43,6 +43,39 @@ class TerminalBuffer(
     }
 
     /**
+     * Check if a character is a wide character (CJK, fullwidth, etc.)
+     * Wide characters occupy 2 cells in terminal
+     */
+    private fun isWideChar(char: Char): Boolean {
+        val code = char.code
+        return when {
+            // CJK Unified Ideographs
+            code in 0x4E00..0x9FFF -> true
+            // CJK Unified Ideographs Extension A
+            code in 0x3400..0x4DBF -> true
+            // CJK Compatibility Ideographs
+            code in 0xF900..0xFAFF -> true
+            // Hangul Syllables
+            code in 0xAC00..0xD7AF -> true
+            // Fullwidth Forms
+            code in 0xFF00..0xFFEF -> true
+            // CJK Symbols and Punctuation
+            code in 0x3000..0x303F -> true
+            // Hiragana
+            code in 0x3040..0x309F -> true
+            // Katakana
+            code in 0x30A0..0x30FF -> true
+            // Bopomofo
+            code in 0x3100..0x312F -> true
+            // CJK Radicals
+            code in 0x2E80..0x2EFF -> true
+            // Enclosed CJK Letters
+            code in 0x3200..0x32FF -> true
+            else -> false
+        }
+    }
+
+    /**
      * 获取指定位置的单元格
      */
     fun getCell(row: Int, col: Int): TerminalCell {
@@ -66,14 +99,29 @@ class TerminalBuffer(
      * 在当前光标位置写入字符
      */
     fun writeChar(char: Char) {
-        if (cursorCol >= columns) {
+        val isWide = isWideChar(char)
+        val charWidth = if (isWide) 2 else 1
+
+        // 如果宽字符无法在当前行末尾放下，先换行
+        if (isWide && cursorCol >= columns - 1) {
+            cursorCol = 0
+            lineFeed()
+        } else if (cursorCol >= columns) {
             // 自动换行
             cursorCol = 0
             lineFeed()
         }
 
+        // 写入字符
         setCell(cursorRow, cursorCol, TerminalCell(char, currentAttribute))
-        cursorCol++
+
+        // 宽字符需要清除下一个cell（占位符）
+        if (isWide && cursorCol + 1 < columns) {
+            // 使用空字符作为宽字符的第二部分占位
+            setCell(cursorRow, cursorCol + 1, TerminalCell('\u0000', currentAttribute))
+        }
+
+        cursorCol += charWidth
     }
 
     /**

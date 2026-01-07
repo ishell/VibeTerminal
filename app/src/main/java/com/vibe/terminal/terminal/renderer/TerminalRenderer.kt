@@ -21,13 +21,69 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
+import com.vibe.terminal.R
 import com.vibe.terminal.terminal.emulator.TerminalColor
 import com.vibe.terminal.terminal.emulator.TerminalEmulator
 import kotlinx.coroutines.delay
+
+/**
+ * Terminal font family with Nerd Font support
+ * Uses JetBrains Mono Nerd Font for icons, with system fallback for CJK
+ */
+val TerminalFontFamily = FontFamily(
+    Font(R.font.jetbrains_mono_nerd, FontWeight.Normal),
+    Font(R.font.jetbrains_mono_nerd_bold, FontWeight.Bold)
+)
+
+/**
+ * Check if a character is a wide character (CJK, fullwidth, etc.)
+ * Wide characters typically occupy 2 cells in terminal
+ */
+private fun isWideChar(char: Char): Boolean {
+    val code = char.code
+    return when {
+        // CJK Unified Ideographs
+        code in 0x4E00..0x9FFF -> true
+        // CJK Unified Ideographs Extension A
+        code in 0x3400..0x4DBF -> true
+        // CJK Compatibility Ideographs
+        code in 0xF900..0xFAFF -> true
+        // Hangul Syllables
+        code in 0xAC00..0xD7AF -> true
+        // Fullwidth Forms
+        code in 0xFF00..0xFFEF -> true
+        // CJK Symbols and Punctuation
+        code in 0x3000..0x303F -> true
+        // Hiragana
+        code in 0x3040..0x309F -> true
+        // Katakana
+        code in 0x30A0..0x30FF -> true
+        // Bopomofo
+        code in 0x3100..0x312F -> true
+        // CJK Radicals
+        code in 0x2E80..0x2EFF -> true
+        // Enclosed CJK Letters
+        code in 0x3200..0x32FF -> true
+        else -> false
+    }
+}
+
+/**
+ * Get the appropriate font family for a character
+ * Uses system monospace for CJK characters
+ */
+private fun getFontForChar(char: Char): FontFamily {
+    return if (isWideChar(char)) {
+        FontFamily.Monospace  // Use system font for CJK (has better coverage)
+    } else {
+        TerminalFontFamily
+    }
+}
 
 /**
  * 终端渲染组件
@@ -47,7 +103,7 @@ fun TerminalRenderer(
     val charSize = remember(fontSize) {
         with(density) {
             val style = TextStyle(
-                fontFamily = FontFamily.Monospace,
+                fontFamily = TerminalFontFamily,
                 fontSize = fontSize.sp
             )
             val result = textMeasurer.measure("M", style)
@@ -153,12 +209,28 @@ private fun DrawScope.drawTerminal(
                         is TerminalColor.TrueColor -> Color(fg.r, fg.g, fg.b)
                     }
 
+                    // 根据字符类型选择字体
+                    val fontFamily = getFontForChar(cell.character)
+                    val isWide = isWideChar(cell.character)
+
                     val style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = fontFamily,
                         fontSize = fontSize.sp,
                         fontWeight = if (cell.attribute.bold) FontWeight.Bold else FontWeight.Normal,
                         color = fgColor
                     )
+
+                    // 宽字符占用2个cell的宽度
+                    if (isWide) {
+                        // 绘制宽字符背景（2个cell宽）
+                        if (bgColor != colorScheme.background) {
+                            drawRect(
+                                color = bgColor,
+                                topLeft = Offset(x, y),
+                                size = Size(charSize.width * 2, charSize.height)
+                            )
+                        }
+                    }
 
                     drawText(
                         textMeasurer = textMeasurer,
