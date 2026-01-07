@@ -3,9 +3,9 @@ package com.vibe.terminal.ui.settings
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vibe.terminal.data.ssh.SshConfig
 import com.vibe.terminal.data.ssh.SshErrorAnalyzer
 import com.vibe.terminal.data.ssh.SshErrorInfo
+import com.vibe.terminal.data.ssh.SshKeyLoader
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.repository.MachineRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,13 +19,6 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
-import net.schmizz.sshj.userauth.keyprovider.KeyProvider
-import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
-import net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
-import net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
-import net.schmizz.sshj.userauth.password.PasswordFinder
-import net.schmizz.sshj.userauth.password.PasswordUtils
-import java.io.StringReader
 import java.util.UUID
 import javax.inject.Inject
 
@@ -140,6 +133,7 @@ class MachineEditViewModel @Inject constructor(
 
             val result = withContext(Dispatchers.IO) {
                 var client: SSHClient? = null
+                var keyResult: com.vibe.terminal.data.ssh.SshKeyLoadResult? = null
                 try {
                     client = SSHClient(DefaultConfig()).apply {
                         addHostKeyVerifier(PromiscuousVerifier())
@@ -150,8 +144,11 @@ class MachineEditViewModel @Inject constructor(
                                 authPassword(state.username, state.password)
                             }
                             Machine.AuthType.SSH_KEY -> {
-                                val keyProvider = loadKeyProvider(state.privateKey, state.passphrase.ifBlank { null })
-                                authPublickey(state.username, keyProvider)
+                                keyResult = SshKeyLoader.loadKey(
+                                    state.privateKey,
+                                    state.passphrase.ifBlank { null }
+                                )
+                                authPublickey(state.username, keyResult!!.keyProvider)
                             }
                         }
                     }
@@ -159,11 +156,8 @@ class MachineEditViewModel @Inject constructor(
                 } catch (e: Exception) {
                     Result.failure(e)
                 } finally {
-                    try {
-                        client?.disconnect()
-                    } catch (_: Exception) {
-                        // Ignore disconnect errors
-                    }
+                    keyResult?.cleanup()
+                    try { client?.disconnect() } catch (_: Exception) { }
                 }
             }
 
@@ -181,53 +175,6 @@ class MachineEditViewModel @Inject constructor(
 
     fun dismissTestResult() {
         _uiState.update { it.copy(testStatus = TestConnectionStatus.Idle) }
-    }
-
-    private fun loadKeyProvider(privateKey: String, passphrase: String?): KeyProvider {
-        val passwordFinder: PasswordFinder? = passphrase?.let {
-            PasswordUtils.createOneOff(it.toCharArray())
-        }
-
-        return when {
-            privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
-                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
-                try {
-                    tempFile.writeText(privateKey)
-                    tempFile.setReadable(false, false)
-                    tempFile.setReadable(true, true)
-                    OpenSSHKeyFile().apply {
-                        init(tempFile, passwordFinder)
-                    }
-                } finally {
-                    tempFile.delete()
-                }
-            }
-            privateKey.contains("BEGIN RSA PRIVATE KEY") ||
-            privateKey.contains("BEGIN DSA PRIVATE KEY") ||
-            privateKey.contains("BEGIN EC PRIVATE KEY") -> {
-                PKCS8KeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
-                }
-            }
-            privateKey.contains("PuTTY-User-Key-File") -> {
-                PuTTYKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
-                }
-            }
-            else -> {
-                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
-                try {
-                    tempFile.writeText(privateKey)
-                    tempFile.setReadable(false, false)
-                    tempFile.setReadable(true, true)
-                    OpenSSHKeyFile().apply {
-                        init(tempFile, passwordFinder)
-                    }
-                } finally {
-                    tempFile.delete()
-                }
-            }
-        }
     }
 }
 

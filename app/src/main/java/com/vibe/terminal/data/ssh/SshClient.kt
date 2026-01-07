@@ -10,15 +10,9 @@ import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.connection.channel.direct.SessionChannel
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
-import net.schmizz.sshj.userauth.keyprovider.KeyProvider
-import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
-import net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
-import net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
-import net.schmizz.sshj.userauth.password.PasswordFinder
-import net.schmizz.sshj.userauth.password.PasswordUtils
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
-import java.io.StringReader
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,6 +27,7 @@ class SshClient @Inject constructor() {
     private var sshClient: SSHClient? = null
     private var sessionChannel: SessionChannel? = null
     private var shell: Session.Shell? = null
+    private var tempKeyFile: File? = null
 
     private val _connectionState = MutableStateFlow<SshConnectionState>(SshConnectionState.Disconnected)
     val connectionState: StateFlow<SshConnectionState> = _connectionState.asStateFlow()
@@ -44,8 +39,10 @@ class SshClient @Inject constructor() {
         try {
             _connectionState.value = SshConnectionState.Connecting
 
+            // 清理之前的临时文件
+            cleanupTempKeyFile()
+
             val client = SSHClient(DefaultConfig()).apply {
-                // TODO: 生产环境应该使用 known_hosts 验证
                 addHostKeyVerifier(PromiscuousVerifier())
                 connect(config.host, config.port)
 
@@ -54,8 +51,11 @@ class SshClient @Inject constructor() {
                         authPassword(config.username, auth.password)
                     }
                     is SshConfig.AuthMethod.PublicKey -> {
-                        val keyProvider = loadKeyProvider(auth.privateKey, auth.passphrase)
-                        authPublickey(config.username, keyProvider)
+                        val keyResult = SshKeyLoader.loadKey(auth.privateKey, auth.passphrase)
+                        tempKeyFile = keyResult.tempFile
+                        authPublickey(config.username, keyResult.keyProvider)
+                        // 认证成功后清理临时文件
+                        cleanupTempKeyFile()
                     }
                 }
             }
@@ -64,65 +64,22 @@ class SshClient @Inject constructor() {
             _connectionState.value = SshConnectionState.Connected
             Result.success(Unit)
         } catch (e: Exception) {
+            cleanupTempKeyFile()
             val errorInfo = SshErrorAnalyzer.analyze(e)
             _connectionState.value = SshConnectionState.Error(errorInfo, e)
             Result.failure(e)
         }
     }
 
-    /**
-     * 加载SSH密钥，自动检测格式
-     */
-    private fun loadKeyProvider(privateKey: String, passphrase: String?): KeyProvider {
-        val passwordFinder: PasswordFinder? = passphrase?.let {
-            PasswordUtils.createOneOff(it.toCharArray())
+    private fun cleanupTempKeyFile() {
+        tempKeyFile?.let { file ->
+            try {
+                if (file.exists()) {
+                    file.delete()
+                }
+            } catch (_: Exception) { }
         }
-
-        // 根据密钥内容判断格式
-        return when {
-            privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
-                // 新版OpenSSH格式需要通过临时文件加载
-                // sshj的Reader方式对新格式支持不完善
-                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
-                try {
-                    tempFile.writeText(privateKey)
-                    tempFile.setReadable(false, false)
-                    tempFile.setReadable(true, true)
-                    OpenSSHKeyFile().apply {
-                        init(tempFile, passwordFinder)
-                    }
-                } finally {
-                    tempFile.delete()
-                }
-            }
-            privateKey.contains("BEGIN RSA PRIVATE KEY") ||
-            privateKey.contains("BEGIN DSA PRIVATE KEY") ||
-            privateKey.contains("BEGIN EC PRIVATE KEY") -> {
-                // PEM format (older OpenSSH or OpenSSL generated)
-                PKCS8KeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
-                }
-            }
-            privateKey.contains("PuTTY-User-Key-File") -> {
-                PuTTYKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
-                }
-            }
-            else -> {
-                // 默认也用临时文件方式，更兼容
-                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
-                try {
-                    tempFile.writeText(privateKey)
-                    tempFile.setReadable(false, false)
-                    tempFile.setReadable(true, true)
-                    OpenSSHKeyFile().apply {
-                        init(tempFile, passwordFinder)
-                    }
-                } finally {
-                    tempFile.delete()
-                }
-            }
-        }
+        tempKeyFile = null
     }
 
     /**
@@ -160,42 +117,28 @@ class SshClient @Inject constructor() {
         }
     }
 
-    /**
-     * 调整终端大小
-     */
     fun resizePty(cols: Int, rows: Int) {
         sessionChannel?.changeWindowDimensions(cols, rows, 0, 0)
     }
 
-    /**
-     * 断开连接
-     */
     suspend fun disconnect() = withContext(Dispatchers.IO) {
         try {
             shell?.close()
             sessionChannel?.close()
             sshClient?.disconnect()
-        } catch (e: Exception) {
-            // Ignore disconnect errors
-        } finally {
+        } catch (_: Exception) { }
+        finally {
             shell = null
             sessionChannel = null
             sshClient = null
+            cleanupTempKeyFile()
             _connectionState.value = SshConnectionState.Disconnected
         }
     }
 
-    /**
-     * 检查是否已连接
-     */
-    fun isConnected(): Boolean {
-        return sshClient?.isConnected == true
-    }
+    fun isConnected(): Boolean = sshClient?.isConnected == true
 }
 
-/**
- * PTY会话数据类
- */
 data class PtySession(
     val inputStream: InputStream,
     val outputStream: OutputStream,

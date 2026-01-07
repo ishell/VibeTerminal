@@ -2,6 +2,7 @@ package com.vibe.terminal.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.terminal.data.ssh.SshKeyLoader
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
 import com.vibe.terminal.domain.repository.MachineRepository
@@ -20,13 +21,6 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
-import net.schmizz.sshj.userauth.keyprovider.KeyProvider
-import net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile
-import net.schmizz.sshj.userauth.keyprovider.PKCS8KeyFile
-import net.schmizz.sshj.userauth.keyprovider.PuTTYKeyFile
-import net.schmizz.sshj.userauth.password.PasswordFinder
-import net.schmizz.sshj.userauth.password.PasswordUtils
-import java.io.StringReader
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -74,6 +68,7 @@ class HomeViewModel @Inject constructor(
 
             val result = withContext(Dispatchers.IO) {
                 var client: SSHClient? = null
+                var keyResult: com.vibe.terminal.data.ssh.SshKeyLoadResult? = null
                 try {
                     client = SSHClient(DefaultConfig()).apply {
                         addHostKeyVerifier(PromiscuousVerifier())
@@ -84,11 +79,11 @@ class HomeViewModel @Inject constructor(
                                 authPassword(machine.username, machine.password ?: "")
                             }
                             Machine.AuthType.SSH_KEY -> {
-                                val keyProvider = loadKeyProvider(
+                                keyResult = SshKeyLoader.loadKey(
                                     machine.privateKey ?: "",
                                     machine.passphrase
                                 )
-                                authPublickey(machine.username, keyProvider)
+                                authPublickey(machine.username, keyResult!!.keyProvider)
                             }
                         }
                     }
@@ -101,18 +96,12 @@ class HomeViewModel @Inject constructor(
                     val output = command.inputStream.bufferedReader().readText()
                     session.close()
 
-                    // Parse session names (one per line, filter empty lines)
-                    // Strip ANSI escape codes and clean up output
+                    // Parse session names
                     val ansiRegex = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
                     val sessions = output.lines()
-                        .map { line ->
-                            // Remove ANSI escape codes
-                            ansiRegex.replace(line, "").trim()
-                        }
+                        .map { line -> ansiRegex.replace(line, "").trim() }
                         .filter { it.isNotBlank() && !it.contains("No active sessions") }
                         .map { line ->
-                            // zellij list-sessions format: "session_name [Created ... ago]" or just "session_name"
-                            // Also handle "(current)" suffix
                             line.split(" ").firstOrNull()?.trim()?.removeSuffix("(current)") ?: line
                         }
                         .filter { it.isNotBlank() && !it.startsWith("[") }
@@ -122,11 +111,8 @@ class HomeViewModel @Inject constructor(
                 } catch (e: Exception) {
                     Result.failure(e)
                 } finally {
-                    try {
-                        client?.disconnect()
-                    } catch (_: Exception) {
-                        // Ignore disconnect errors
-                    }
+                    keyResult?.cleanup()
+                    try { client?.disconnect() } catch (_: Exception) { }
                 }
             }
 
@@ -168,53 +154,6 @@ class HomeViewModel @Inject constructor(
     fun deleteProject(projectId: String) {
         viewModelScope.launch {
             projectRepository.deleteProject(projectId)
-        }
-    }
-
-    private fun loadKeyProvider(privateKey: String, passphrase: String?): KeyProvider {
-        val passwordFinder: PasswordFinder? = passphrase?.let {
-            PasswordUtils.createOneOff(it.toCharArray())
-        }
-
-        return when {
-            privateKey.contains("BEGIN OPENSSH PRIVATE KEY") -> {
-                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
-                try {
-                    tempFile.writeText(privateKey)
-                    tempFile.setReadable(false, false)
-                    tempFile.setReadable(true, true)
-                    OpenSSHKeyFile().apply {
-                        init(tempFile, passwordFinder)
-                    }
-                } finally {
-                    tempFile.delete()
-                }
-            }
-            privateKey.contains("BEGIN RSA PRIVATE KEY") ||
-            privateKey.contains("BEGIN DSA PRIVATE KEY") ||
-            privateKey.contains("BEGIN EC PRIVATE KEY") -> {
-                PKCS8KeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
-                }
-            }
-            privateKey.contains("PuTTY-User-Key-File") -> {
-                PuTTYKeyFile().apply {
-                    init(StringReader(privateKey), passwordFinder)
-                }
-            }
-            else -> {
-                val tempFile = java.io.File.createTempFile("ssh_key_", ".tmp")
-                try {
-                    tempFile.writeText(privateKey)
-                    tempFile.setReadable(false, false)
-                    tempFile.setReadable(true, true)
-                    OpenSSHKeyFile().apply {
-                        init(tempFile, passwordFinder)
-                    }
-                } finally {
-                    tempFile.delete()
-                }
-            }
         }
     }
 }
