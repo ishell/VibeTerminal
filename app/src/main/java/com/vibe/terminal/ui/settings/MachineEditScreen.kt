@@ -203,41 +203,82 @@ fun MachineEditScreen(
                     )
                 }
                 Machine.AuthType.SSH_KEY -> {
-                    // 选择文件按钮
-                    OutlinedButton(
-                        onClick = {
-                            filePickerLauncher.launch(arrayOf("*/*"))
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            Icons.Default.FileOpen,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Select Key File")
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // 显示已加载的密钥状态或手动输入
-                    OutlinedTextField(
-                        value = uiState.privateKey,
-                        onValueChange = viewModel::updatePrivateKey,
-                        label = { Text("Private Key") },
-                        placeholder = { Text("Select file or paste key here...") },
-                        supportingText = {
-                            if (uiState.privateKey.isNotBlank()) {
-                                val lines = uiState.privateKey.lines().size
-                                Text("$lines lines loaded")
+                    // 密钥状态显示
+                    if (uiState.privateKey.isNotBlank()) {
+                        // 已有密钥 - 显示状态而非内容
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "密钥已配置",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        "${uiState.privateKey.lines().size} 行",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.updatePrivateKey("") }
+                                ) {
+                                    Text("清除")
+                                }
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp),
-                        maxLines = 10
-                    )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 重新选择文件按钮
+                        OutlinedButton(
+                            onClick = {
+                                filePickerLauncher.launch(arrayOf("*/*"))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.FileOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("更换密钥文件")
+                        }
+                    } else {
+                        // 无密钥 - 选择文件按钮
+                        OutlinedButton(
+                            onClick = {
+                                filePickerLauncher.launch(arrayOf("*/*"))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.FileOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("选择密钥文件")
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
