@@ -9,11 +9,12 @@ This directory contains fonts used by VibeTerminal. All fonts are licensed under
 - **Source:** https://github.com/be5invis/Iosevka
 - **Nerd Fonts Patch:** https://github.com/ryanoasis/nerd-fonts
 
-## JetBrains Mono
+## JetBrains Mono Nerd Font
 
 - **License:** SIL Open Font License, Version 1.1
 - **Copyright:** Copyright (c) 2020 The JetBrains Mono Project Authors
 - **Source:** https://github.com/JetBrains/JetBrainsMono
+- **Nerd Fonts Patch:** https://github.com/ryanoasis/nerd-fonts
 
 ---
 

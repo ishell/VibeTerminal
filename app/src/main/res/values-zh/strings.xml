@@ -118,8 +118,8 @@
     <string name="terminal_font">终端字体</string>
     <string name="font_iosevka">Iosevka Nerd Font</string>
     <string name="font_iosevka_desc">支持 Nerd Font 图标，终端首选</string>
-    <string name="font_jetbrains_mono">JetBrains Mono</string>
-    <string name="font_jetbrains_mono_desc">流行的编程字体，支持连字</string>
+    <string name="font_jetbrains_mono">JetBrains Mono Nerd Font</string>
+    <string name="font_jetbrains_mono_desc">流行的编程字体，支持 Nerd Font 图标</string>
     <string name="font_system_mono">系统等宽字体</string>
     <string name="font_system_mono_desc">使用系统默认等宽字体</string>
 </resources>

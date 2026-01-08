@@ -49,8 +49,8 @@ val IosevkaFontFamily = FontFamily(
 )
 
 /**
- * JetBrains Mono font family
- * Popular coding font with ligatures support
+ * JetBrains Mono Nerd Font family
+ * Popular coding font with Nerd Font icons
  */
 val JetBrainsMonoFontFamily = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Normal),
