@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -43,8 +44,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vibe.terminal.R
 import com.vibe.terminal.data.preferences.UserPreferences
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.ui.theme.StatusConnected
@@ -58,21 +61,22 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showScreenTimeoutDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.settings)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { onNavigateToMachineEdit(null) }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Machine")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_machine_desc))
             }
         }
     ) { padding ->
@@ -85,7 +89,7 @@ fun SettingsScreen(
         ) {
             item {
                 Text(
-                    text = "Machines",
+                    text = stringResource(R.string.machines),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -94,7 +98,7 @@ fun SettingsScreen(
             if (uiState.machines.isEmpty()) {
                 item {
                     Text(
-                        text = "No machines configured",
+                        text = stringResource(R.string.no_machines),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -112,10 +116,54 @@ fun SettingsScreen(
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Appearance",
+                    text = stringResource(R.string.appearance),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
+            }
+
+            // Language selection
+            item {
+                val currentLanguageLabel = when (uiState.language) {
+                    UserPreferences.LANGUAGE_EN -> stringResource(R.string.language_en)
+                    UserPreferences.LANGUAGE_ZH -> stringResource(R.string.language_zh)
+                    else -> stringResource(R.string.language_system)
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showLanguageDialog = true },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.language),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = currentLanguageLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
 
             item {
@@ -127,11 +175,11 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Theme",
+                            text = stringResource(R.string.theme),
                             style = MaterialTheme.typography.bodyLarge
                         )
                         Text(
-                            text = "Dark (default)",
+                            text = stringResource(R.string.dark_default),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -148,7 +196,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Terminal Font Size",
+                            text = stringResource(R.string.terminal_font_size),
                             style = MaterialTheme.typography.bodyLarge
                         )
                         Text(
@@ -169,7 +217,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Color Scheme",
+                            text = stringResource(R.string.color_scheme),
                             style = MaterialTheme.typography.bodyLarge
                         )
                         Text(
@@ -185,7 +233,7 @@ fun SettingsScreen(
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Terminal",
+                    text = stringResource(R.string.terminal),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -194,7 +242,7 @@ fun SettingsScreen(
             item {
                 val currentTimeoutLabel = UserPreferences.SCREEN_TIMEOUT_OPTIONS
                     .find { it.first == uiState.screenTimeoutMinutes }?.second
-                    ?: "System default"
+                    ?: stringResource(R.string.system_default)
 
                 Card(
                     modifier = Modifier
@@ -219,7 +267,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Screen Timeout",
+                                text = stringResource(R.string.screen_timeout),
                                 style = MaterialTheme.typography.bodyLarge
                             )
                             Text(
@@ -242,6 +290,18 @@ fun SettingsScreen(
             onSelect = { minutes ->
                 viewModel.setScreenTimeout(minutes)
                 showScreenTimeoutDialog = false
+            }
+        )
+    }
+
+    // Language Dialog
+    if (showLanguageDialog) {
+        LanguageDialog(
+            currentValue = uiState.language,
+            onDismiss = { showLanguageDialog = false },
+            onSelect = { language ->
+                viewModel.setLanguage(language)
+                showLanguageDialog = false
             }
         )
     }
@@ -284,7 +344,7 @@ private fun MachineCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "Auth: ${machine.authType.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                    text = stringResource(R.string.auth_label, machine.authType.name.lowercase().replaceFirstChar { it.uppercase() }),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -292,13 +352,13 @@ private fun MachineCard(
             IconButton(onClick = onEdit) {
                 Icon(
                     imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit"
+                    contentDescription = stringResource(R.string.edit_desc)
                 )
             }
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
+                    contentDescription = stringResource(R.string.delete_desc),
                     tint = MaterialTheme.colorScheme.error
                 )
             }
@@ -314,7 +374,7 @@ private fun ScreenTimeoutDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Screen Timeout") },
+        title = { Text(stringResource(R.string.screen_timeout)) },
         text = {
             Column {
                 UserPreferences.SCREEN_TIMEOUT_OPTIONS.forEach { (minutes, label) ->
@@ -348,7 +408,61 @@ private fun ScreenTimeoutDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun LanguageDialog(
+    currentValue: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    val options = listOf(
+        UserPreferences.LANGUAGE_SYSTEM to stringResource(R.string.language_system),
+        UserPreferences.LANGUAGE_EN to stringResource(R.string.language_en),
+        UserPreferences.LANGUAGE_ZH to stringResource(R.string.language_zh)
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.language)) },
+        text = {
+            Column {
+                options.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(value) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentValue == value,
+                            onClick = { onSelect(value) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        if (currentValue == value) {
+                            Spacer(modifier = Modifier.weight(1f))
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
             }
         }
     )

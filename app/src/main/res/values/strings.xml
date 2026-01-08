@@ -95,4 +95,22 @@
     <string name="screen_timeout">Screen Timeout</string>
     <string name="about">About</string>
     <string name="version">Version</string>
+    <string name="machines">Machines</string>
+    <string name="appearance">Appearance</string>
+    <string name="theme">Theme</string>
+    <string name="dark_default">Dark (default)</string>
+    <string name="terminal_font_size">Terminal Font Size</string>
+    <string name="color_scheme">Color Scheme</string>
+    <string name="terminal">Terminal</string>
+    <string name="system_default">System default</string>
+    <string name="add_machine_desc">Add Machine</string>
+    <string name="edit_desc">Edit</string>
+    <string name="delete_desc">Delete</string>
+    <string name="auth_label">Auth: %s</string>
+
+    <!-- Language Settings -->
+    <string name="language">Language</string>
+    <string name="language_system">Follow System</string>
+    <string name="language_en">English</string>
+    <string name="language_zh">中文</string>
 </resources>

@@ -21,11 +21,13 @@ class SettingsViewModel @Inject constructor(
 
     val uiState: StateFlow<SettingsUiState> = combine(
         machineRepository.getAllMachines(),
-        userPreferences.screenTimeout
-    ) { machines, screenTimeout ->
+        userPreferences.screenTimeout,
+        userPreferences.language
+    ) { machines, screenTimeout, language ->
         SettingsUiState(
             machines = machines,
             screenTimeoutMinutes = screenTimeout,
+            language = language,
             isLoading = false
         )
     }.stateIn(
@@ -45,10 +47,17 @@ class SettingsViewModel @Inject constructor(
             userPreferences.setScreenTimeout(minutes)
         }
     }
+
+    fun setLanguage(language: String) {
+        viewModelScope.launch {
+            userPreferences.setLanguage(language)
+        }
+    }
 }
 
 data class SettingsUiState(
     val machines: List<Machine> = emptyList(),
     val screenTimeoutMinutes: Int = 0,
+    val language: String = UserPreferences.LANGUAGE_SYSTEM,
     val isLoading: Boolean = false
 )
