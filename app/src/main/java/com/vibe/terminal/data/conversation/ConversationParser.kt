@@ -214,13 +214,34 @@ object ConversationParser {
         val firstSegment = segments.first()
         val lastSegment = segments.last()
 
-        // 找到第一条非 "session continuation" 的消息作为标题
+        // 找到第一条有效的用户消息作为标题
         val titleSegment = segments.firstOrNull {
-            !isSessionContinuation(it.userMessage) && it.userMessage.length > 10
-        } ?: firstSegment
+            !isSessionContinuation(it.userMessage) &&
+            it.userMessage.isNotBlank() &&
+            it.userMessage.length > 5
+        }
 
-        val title = titleSegment.userMessagePreview.let {
-            if (it.length > 60) it.take(60) + "..." else it
+        val title = when {
+            titleSegment != null -> {
+                val preview = titleSegment.userMessagePreview
+                if (preview.length > 60) preview.take(60) + "..." else preview
+            }
+            // 如果没有有效用户消息，使用工具信息
+            else -> {
+                val toolNames = segments
+                    .flatMap { it.assistantMessages }
+                    .flatMap { it.contentBlocks }
+                    .filterIsInstance<ContentBlock.ToolUse>()
+                    .map { it.toolName }
+                    .distinct()
+                    .take(3)
+
+                if (toolNames.isNotEmpty()) {
+                    "[工具执行: ${toolNames.joinToString(", ")}]"
+                } else {
+                    "[系统自动对话]"
+                }
+            }
         }
 
         return ConversationTopic(
@@ -229,7 +250,7 @@ object ConversationParser {
             segments = segments,
             startTime = firstSegment.timestamp,
             endTime = lastSegment.timestamp,
-            userMessageCount = segments.size,
+            userMessageCount = segments.count { it.userMessage.isNotBlank() && !isSessionContinuation(it.userMessage) },
             assistantMessageCount = segments.sumOf { it.assistantMessages.size }
         )
     }
