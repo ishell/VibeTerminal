@@ -1,5 +1,8 @@
 package com.vibe.terminal.ui.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -31,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
+import com.vibe.terminal.ui.conversation.ConversationHistoryView
 import com.vibe.terminal.ui.theme.StatusConnected
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,6 +73,7 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val showNewProjectDialog by viewModel.showNewProjectDialog.collectAsState()
     val dialogState by viewModel.dialogState.collectAsState()
+    val conversationStates by viewModel.conversationStates.collectAsState()
 
     Scaffold(
         topBar = {
@@ -116,8 +125,12 @@ fun HomeScreen(
                     ProjectList(
                         projects = uiState.projects,
                         machines = uiState.machines,
+                        conversationStates = conversationStates,
                         onProjectClick = onNavigateToTerminal,
-                        onProjectDelete = viewModel::deleteProject
+                        onProjectDelete = viewModel::deleteProject,
+                        onFetchHistory = viewModel::fetchConversationHistory,
+                        onRefreshHistory = viewModel::refreshConversationHistory,
+                        onClearHistory = viewModel::clearConversationHistory
                     )
                 }
             }
@@ -209,8 +222,12 @@ private fun EmptyProjectState(
 private fun ProjectList(
     projects: List<Project>,
     machines: List<Machine>,
+    conversationStates: Map<String, ConversationHistoryState>,
     onProjectClick: (String) -> Unit,
-    onProjectDelete: (String) -> Unit
+    onProjectDelete: (String) -> Unit,
+    onFetchHistory: (Project) -> Unit,
+    onRefreshHistory: (Project) -> Unit,
+    onClearHistory: (String) -> Unit
 ) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -218,11 +235,21 @@ private fun ProjectList(
     ) {
         items(projects, key = { it.id }) { project ->
             val machine = machines.find { it.id == project.machineId }
+            val historyState = conversationStates[project.id]
             ProjectCard(
                 project = project,
                 machine = machine,
+                historyState = historyState,
                 onClick = { onProjectClick(project.id) },
-                onDelete = { onProjectDelete(project.id) }
+                onDelete = { onProjectDelete(project.id) },
+                onToggleHistory = {
+                    if (historyState == null) {
+                        onFetchHistory(project)
+                    } else {
+                        onClearHistory(project.id)
+                    }
+                },
+                onRefreshHistory = { onRefreshHistory(project) }
             )
         }
     }
@@ -233,54 +260,108 @@ private fun ProjectList(
 private fun ProjectCard(
     project: Project,
     machine: Machine?,
+    historyState: ConversationHistoryState?,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleHistory: () -> Unit,
+    onRefreshHistory: () -> Unit
 ) {
+    val isExpanded = historyState != null
+
     Card(
-        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Folder,
-                contentDescription = null,
-                tint = StatusConnected,
-                modifier = Modifier.size(40.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = project.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = machine?.displayAddress() ?: "Unknown machine",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Session: ${project.zellijSession}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onDelete) {
+        Column {
+            // 主要内容行 - 可点击进入终端
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = null,
+                    tint = StatusConnected,
+                    modifier = Modifier.size(40.dp)
                 )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = project.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = machine?.displayAddress() ?: "Unknown machine",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Session: ${project.zellijSession}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 历史按钮
+                IconButton(onClick = onToggleHistory) {
+                    if (historyState?.isLoading == true) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.History,
+                            contentDescription = if (isExpanded) "Hide History" else "Show History",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                // 连接按钮
+                IconButton(onClick = onClick) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = "Connect",
+                        tint = StatusConnected
+                    )
+                }
+
+                // 删除按钮
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            // 对话历史展开区域
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column {
+                    HorizontalDivider()
+                    ConversationHistoryView(
+                        sessions = historyState?.sessions ?: emptyList(),
+                        isLoading = historyState?.isLoading ?: false,
+                        isRefreshing = historyState?.isRefreshing ?: false,
+                        error = historyState?.error,
+                        lastUpdated = historyState?.lastUpdated ?: 0L,
+                        onRefresh = onRefreshHistory,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
@@ -293,10 +374,11 @@ private fun NewProjectDialog(
     dialogState: NewProjectDialogState,
     onFetchSessions: (Machine) -> Unit,
     onDismiss: () -> Unit,
-    onCreate: (name: String, machineId: String, zellijSession: String) -> Unit
+    onCreate: (name: String, machineId: String, zellijSession: String, workingDirectory: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var zellijSession by remember { mutableStateOf("") }
+    var workingDirectory by remember { mutableStateOf("") }
     var selectedMachine by remember { mutableStateOf(machines.firstOrNull()) }
     var machineExpanded by remember { mutableStateOf(false) }
     var sessionExpanded by remember { mutableStateOf(false) }
@@ -312,6 +394,20 @@ private fun NewProjectDialog(
                     label = { Text("Project Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Working Directory (for Claude Code history)
+                OutlinedTextField(
+                    value = workingDirectory,
+                    onValueChange = { workingDirectory = it },
+                    label = { Text("Working Directory") },
+                    placeholder = { Text("/home/user/project") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = {
+                        Text("Full path for Claude Code history")
+                    }
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -382,10 +478,26 @@ private fun NewProjectDialog(
                                 onDismissRequest = { sessionExpanded = false }
                             ) {
                                 dialogState.zellijSessions.forEach { session ->
+                                    val sessionCwd = dialogState.sessionWorkingDirs[session]
                                     DropdownMenuItem(
-                                        text = { Text(session) },
+                                        text = {
+                                            Column {
+                                                Text(session)
+                                                if (sessionCwd != null) {
+                                                    Text(
+                                                        text = sessionCwd,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        },
                                         onClick = {
                                             zellijSession = session
+                                            // Auto-fill working directory if available
+                                            if (sessionCwd != null) {
+                                                workingDirectory = sessionCwd
+                                            }
                                             sessionExpanded = false
                                         }
                                     )
@@ -438,10 +550,10 @@ private fun NewProjectDialog(
             Button(
                 onClick = {
                     selectedMachine?.let {
-                        onCreate(name, it.id, zellijSession)
+                        onCreate(name, it.id, zellijSession, workingDirectory)
                     }
                 },
-                enabled = name.isNotBlank() && zellijSession.isNotBlank() && selectedMachine != null
+                enabled = name.isNotBlank() && zellijSession.isNotBlank() && workingDirectory.isNotBlank() && selectedMachine != null
             ) {
                 Text("Create")
             }
