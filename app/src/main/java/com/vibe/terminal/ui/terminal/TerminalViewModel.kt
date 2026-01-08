@@ -60,6 +60,16 @@ class TerminalViewModel @Inject constructor(
             initialValue = UserPreferences.DEFAULT_SCREEN_TIMEOUT
         )
 
+    /**
+     * Terminal font setting
+     */
+    val terminalFont: StateFlow<String> = userPreferences.terminalFont
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = UserPreferences.DEFAULT_TERMINAL_FONT
+        )
+
     val emulator = TerminalEmulator(columns = 80, rows = 24)
 
     private var outputStream: OutputStream? = null

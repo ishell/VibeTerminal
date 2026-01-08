@@ -25,6 +25,7 @@ class UserPreferences @Inject constructor(
     companion object {
         private val SCREEN_TIMEOUT_KEY = intPreferencesKey("screen_timeout_minutes")
         private val LANGUAGE_KEY = stringPreferencesKey("language")
+        private val TERMINAL_FONT_KEY = stringPreferencesKey("terminal_font")
 
         // 屏幕常亮时间选项（分钟）
         val SCREEN_TIMEOUT_OPTIONS = listOf(
@@ -47,8 +48,20 @@ class UserPreferences @Inject constructor(
             LANGUAGE_ZH
         )
 
+        // 终端字体选项
+        const val FONT_IOSEVKA = "iosevka"
+        const val FONT_JETBRAINS_MONO = "jetbrains_mono"
+        const val FONT_SYSTEM_MONO = "system_mono"
+
+        val FONT_OPTIONS = listOf(
+            FONT_IOSEVKA,
+            FONT_JETBRAINS_MONO,
+            FONT_SYSTEM_MONO
+        )
+
         const val DEFAULT_SCREEN_TIMEOUT = 0  // 默认跟随系统
         const val DEFAULT_LANGUAGE = LANGUAGE_SYSTEM  // 默认跟随系统
+        const val DEFAULT_TERMINAL_FONT = FONT_IOSEVKA  // 默认 Iosevka Nerd Font
     }
 
     /**
@@ -86,6 +99,22 @@ class UserPreferences @Inject constructor(
     suspend fun setLanguage(language: String) {
         context.dataStore.edit { preferences ->
             preferences[LANGUAGE_KEY] = language
+        }
+    }
+
+    /**
+     * 获取终端字体设置
+     */
+    val terminalFont: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[TERMINAL_FONT_KEY] ?: DEFAULT_TERMINAL_FONT
+    }
+
+    /**
+     * 设置终端字体
+     */
+    suspend fun setTerminalFont(font: String) {
+        context.dataStore.edit { preferences ->
+            preferences[TERMINAL_FONT_KEY] = font
         }
     }
 }

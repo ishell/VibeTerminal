@@ -79,6 +79,7 @@ import com.vibe.terminal.data.ssh.SshConnectionState
 import com.vibe.terminal.data.ssh.SshErrorInfo
 import com.vibe.terminal.terminal.renderer.TerminalColorScheme
 import com.vibe.terminal.terminal.renderer.TerminalRenderer
+import com.vibe.terminal.terminal.renderer.getTerminalFontFamily
 import com.vibe.terminal.ui.theme.StatusConnected
 import com.vibe.terminal.ui.theme.StatusConnecting
 import com.vibe.terminal.ui.theme.StatusDisconnected
@@ -94,6 +95,7 @@ fun TerminalScreen(
     val uiState by viewModel.uiState.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val screenTimeoutMinutes by viewModel.screenTimeoutMinutes.collectAsState()
+    val terminalFont by viewModel.terminalFont.collectAsState()
 
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -235,6 +237,7 @@ fun TerminalScreen(
                         emulator = viewModel.emulator,
                         colorScheme = TerminalColorScheme.Dark,
                         fontSize = 12f,
+                        fontFamily = getTerminalFontFamily(terminalFont),
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),

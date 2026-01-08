@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material3.AlertDialog
@@ -62,6 +63,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showScreenTimeoutDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showFontDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -158,6 +160,50 @@ fun SettingsScreen(
                             )
                             Text(
                                 text = currentLanguageLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Font selection
+            item {
+                val currentFontLabel = when (uiState.terminalFont) {
+                    UserPreferences.FONT_JETBRAINS_MONO -> stringResource(R.string.font_jetbrains_mono)
+                    UserPreferences.FONT_SYSTEM_MONO -> stringResource(R.string.font_system_mono)
+                    else -> stringResource(R.string.font_iosevka)
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showFontDialog = true },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FontDownload,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.terminal_font),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = currentFontLabel,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -302,6 +348,18 @@ fun SettingsScreen(
             onSelect = { language ->
                 viewModel.setLanguage(language)
                 showLanguageDialog = false
+            }
+        )
+    }
+
+    // Font Dialog
+    if (showFontDialog) {
+        FontDialog(
+            currentValue = uiState.terminalFont,
+            onDismiss = { showFontDialog = false },
+            onSelect = { font ->
+                viewModel.setTerminalFont(font)
+                showFontDialog = false
             }
         )
     }
@@ -450,6 +508,84 @@ private fun LanguageDialog(
                         )
                         if (currentValue == value) {
                             Spacer(modifier = Modifier.weight(1f))
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun FontDialog(
+    currentValue: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    data class FontOption(
+        val value: String,
+        val label: String,
+        val description: String
+    )
+
+    val options = listOf(
+        FontOption(
+            UserPreferences.FONT_IOSEVKA,
+            stringResource(R.string.font_iosevka),
+            stringResource(R.string.font_iosevka_desc)
+        ),
+        FontOption(
+            UserPreferences.FONT_JETBRAINS_MONO,
+            stringResource(R.string.font_jetbrains_mono),
+            stringResource(R.string.font_jetbrains_mono_desc)
+        ),
+        FontOption(
+            UserPreferences.FONT_SYSTEM_MONO,
+            stringResource(R.string.font_system_mono),
+            stringResource(R.string.font_system_mono_desc)
+        )
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.terminal_font)) },
+        text = {
+            Column {
+                options.forEach { option ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(option.value) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentValue == option.value,
+                            onClick = { onSelect(option.value) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = option.label,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = option.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (currentValue == option.value) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,

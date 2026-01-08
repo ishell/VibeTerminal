@@ -22,12 +22,14 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = combine(
         machineRepository.getAllMachines(),
         userPreferences.screenTimeout,
-        userPreferences.language
-    ) { machines, screenTimeout, language ->
+        userPreferences.language,
+        userPreferences.terminalFont
+    ) { machines, screenTimeout, language, terminalFont ->
         SettingsUiState(
             machines = machines,
             screenTimeoutMinutes = screenTimeout,
             language = language,
+            terminalFont = terminalFont,
             isLoading = false
         )
     }.stateIn(
@@ -53,11 +55,18 @@ class SettingsViewModel @Inject constructor(
             userPreferences.setLanguage(language)
         }
     }
+
+    fun setTerminalFont(font: String) {
+        viewModelScope.launch {
+            userPreferences.setTerminalFont(font)
+        }
+    }
 }
 
 data class SettingsUiState(
     val machines: List<Machine> = emptyList(),
     val screenTimeoutMinutes: Int = 0,
     val language: String = UserPreferences.LANGUAGE_SYSTEM,
+    val terminalFont: String = UserPreferences.DEFAULT_TERMINAL_FONT,
     val isLoading: Boolean = false
 )

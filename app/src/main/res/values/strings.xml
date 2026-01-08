@@ -113,4 +113,13 @@
     <string name="language_system">Follow System</string>
     <string name="language_en">English</string>
     <string name="language_zh">中文</string>
+
+    <!-- Font Settings -->
+    <string name="terminal_font">Terminal Font</string>
+    <string name="font_iosevka">Iosevka Nerd Font</string>
+    <string name="font_iosevka_desc">Nerd Font icons, great for terminals</string>
+    <string name="font_jetbrains_mono">JetBrains Mono</string>
+    <string name="font_jetbrains_mono_desc">Popular coding font with ligatures</string>
+    <string name="font_system_mono">System Monospace</string>
+    <string name="font_system_mono_desc">Use system default monospace font</string>
 </resources>

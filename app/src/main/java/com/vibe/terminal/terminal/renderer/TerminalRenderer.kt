@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
 import com.vibe.terminal.R
+import com.vibe.terminal.data.preferences.UserPreferences
 import com.vibe.terminal.terminal.emulator.TerminalColor
 import com.vibe.terminal.terminal.emulator.TerminalEmulator
 import kotlinx.coroutines.delay
@@ -42,10 +43,35 @@ import kotlin.math.sqrt
  * Terminal font family with Nerd Font support
  * Uses Iosevka Nerd Font for icons and symbols
  */
-val TerminalFontFamily = FontFamily(
+val IosevkaFontFamily = FontFamily(
     Font(R.font.iosevka_nerd, FontWeight.Normal),
     Font(R.font.iosevka_nerd_bold, FontWeight.Bold)
 )
+
+/**
+ * JetBrains Mono font family
+ * Popular coding font with ligatures support
+ */
+val JetBrainsMonoFontFamily = FontFamily(
+    Font(R.font.jetbrains_mono, FontWeight.Normal),
+    Font(R.font.jetbrains_mono_bold, FontWeight.Bold)
+)
+
+/**
+ * Legacy alias for backward compatibility
+ */
+val TerminalFontFamily = IosevkaFontFamily
+
+/**
+ * Get the font family based on user preference
+ */
+fun getTerminalFontFamily(fontPreference: String): FontFamily {
+    return when (fontPreference) {
+        UserPreferences.FONT_JETBRAINS_MONO -> JetBrainsMonoFontFamily
+        UserPreferences.FONT_SYSTEM_MONO -> FontFamily.Monospace
+        else -> IosevkaFontFamily
+    }
+}
 
 /**
  * Check if a character is a wide character (CJK, fullwidth, etc.)
@@ -83,13 +109,13 @@ private fun isWideChar(char: Char): Boolean {
 /**
  * Get the appropriate font family for a character
  * Uses system default font only for CJK characters (needs Noto Sans CJK)
- * Iosevka Nerd Font has extensive Unicode coverage for other symbols
+ * Other fonts have good monospace coverage for ASCII/symbols
  */
-private fun getFontForChar(char: Char): FontFamily {
+private fun getFontForChar(char: Char, baseFontFamily: FontFamily): FontFamily {
     return if (isWideChar(char)) {
         FontFamily.Default  // CJK uses system font
     } else {
-        TerminalFontFamily  // Iosevka has good symbol coverage
+        baseFontFamily  // Use selected font for other characters
     }
 }
 
@@ -101,6 +127,7 @@ fun TerminalRenderer(
     emulator: TerminalEmulator,
     colorScheme: TerminalColorScheme = TerminalColorScheme.Dark,
     fontSize: Float = 14f,
+    fontFamily: FontFamily = IosevkaFontFamily,
     modifier: Modifier = Modifier,
     onTap: () -> Unit = {},
     onDoubleTap: () -> Unit = {},
@@ -119,10 +146,10 @@ fun TerminalRenderer(
     val density = LocalDensity.current
 
     // 计算字符尺寸
-    val charSize = remember(fontSize) {
+    val charSize = remember(fontSize, fontFamily) {
         with(density) {
             val style = TextStyle(
-                fontFamily = TerminalFontFamily,
+                fontFamily = fontFamily,
                 fontSize = fontSize.sp
             )
             val result = textMeasurer.measure("M", style)
@@ -317,6 +344,7 @@ fun TerminalRenderer(
                 charSize = charSize,
                 textMeasurer = textMeasurer,
                 fontSize = fontSize,
+                fontFamily = fontFamily,
                 cursorVisible = cursorVisible
             )
         }
@@ -329,6 +357,7 @@ private fun DrawScope.drawTerminal(
     charSize: CharSize,
     textMeasurer: TextMeasurer,
     fontSize: Float,
+    fontFamily: FontFamily,
     cursorVisible: Boolean
 ) {
     // 确保画布有有效尺寸
@@ -382,11 +411,11 @@ private fun DrawScope.drawTerminal(
                     }
 
                     // 根据字符类型选择字体
-                    val fontFamily = getFontForChar(cell.character)
+                    val charFontFamily = getFontForChar(cell.character, fontFamily)
                     val isWide = isWideChar(cell.character)
 
                     val style = TextStyle(
-                        fontFamily = fontFamily,
+                        fontFamily = charFontFamily,
                         fontSize = fontSize.sp,
                         fontWeight = if (cell.attribute.bold) FontWeight.Bold else FontWeight.Normal,
                         color = fgColor
