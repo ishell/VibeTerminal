@@ -537,25 +537,36 @@ private fun SegmentCard(
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 用户消息部分
+                    // 用户/系统消息部分 - 系统消息可展开收起
                     if (!isEmptyUserMessage) {
-                        Text(
-                            text = if (isSystemContinuation) "System:" else "User:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isSystemContinuation) Color(0xFF9C27B0) else MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = segment.userMessage,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(8.dp),
-                                fontSize = 11.sp
+                        if (isSystemContinuation && segment.userMessage.length > 200) {
+                            // 系统消息太长，使用可展开组件
+                            ExpandableContentBlock(
+                                title = "📋 System",
+                                content = segment.userMessage,
+                                color = Color(0xFF9C27B0),
+                                previewLength = 150
                             )
+                        } else {
+                            // 普通用户消息，直接显示
+                            Text(
+                                text = if (isSystemContinuation) "System:" else "User:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSystemContinuation) Color(0xFF9C27B0) else MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = segment.userMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(8.dp),
+                                    fontSize = 11.sp
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -610,12 +621,30 @@ private fun AssistantMessageDetail(msg: com.vibe.terminal.domain.model.Assistant
         msg.contentBlocks.forEach { block ->
             when (block) {
                 is com.vibe.terminal.domain.model.ContentBlock.Thinking -> {
-                    ExpandableContentBlock(
-                        title = "💭 Thinking",
-                        content = block.thinking,
-                        color = Color(0xFF9C27B0),
-                        previewLength = 150
-                    )
+                    // Thinking 块 - 完整显示，不收起
+                    Surface(
+                        color = Color(0xFF9C27B0).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Text(
+                                text = "💭 Thinking",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF9C27B0),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = block.thinking,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
                 }
                 is com.vibe.terminal.domain.model.ContentBlock.ToolUse -> {
                     val toolColor = when (block.toolName) {
@@ -625,27 +654,50 @@ private fun AssistantMessageDetail(msg: com.vibe.terminal.domain.model.Assistant
                         else -> Color(0xFF607D8B)
                     }
                     val inputPreview = getToolInputPreview(block.toolName, block.input)
-                    ExpandableContentBlock(
-                        title = "🔧 ${block.toolName}",
-                        content = inputPreview,
-                        color = toolColor,
-                        previewLength = 100,
-                        alwaysShowFull = inputPreview.length < 100
-                    )
+                    // Tool Use - 短内容直接显示
+                    Surface(
+                        color = toolColor.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Text(
+                                text = "🔧 ${block.toolName}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = toolColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (inputPreview.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = inputPreview,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
                 }
                 is com.vibe.terminal.domain.model.ContentBlock.Text -> {
                     if (block.text.isNotBlank()) {
+                        // Text 块 - 长文本可收起
                         ExpandableContentBlock(
                             title = "💬 Text",
                             content = block.text,
                             color = MaterialTheme.colorScheme.primary,
-                            previewLength = 200,
+                            previewLength = 300,
                             showTitle = false
                         )
                     }
                 }
                 is com.vibe.terminal.domain.model.ContentBlock.ToolResult -> {
                     if (block.content.isNotBlank()) {
+                        // Tool Result - 可收起
                         ExpandableContentBlock(
                             title = "📋 Result",
                             content = block.content,
