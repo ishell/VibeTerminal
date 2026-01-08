@@ -14,12 +14,15 @@ import javax.inject.Singleton
 
 /**
  * 从远程服务器获取 Claude Code 对话历史
+ * 支持本地缓存以提升性能
  */
 @Singleton
-class ConversationFetcher @Inject constructor() {
+class ConversationFetcher @Inject constructor(
+    private val cache: ConversationCache
+) {
 
     /**
-     * 获取项目的对话历史文件列表
+     * 获取项目的对话历史文件列表（包含修改时间）
      * @param config SSH配置
      * @param projectPath 项目路径 (如 /home/user/myproject)
      * @return 对话文件列表 (sessionId -> 文件路径)
@@ -49,13 +52,15 @@ class ConversationFetcher @Inject constructor() {
             }
 
             // 构建 Claude Code 对话目录路径
-            // ~/.claude/projects/<encoded-project-path>/
             val encodedPath = encodeProjectPath(projectPath)
             val claudeDir = "~/.claude/projects/$encodedPath"
 
-            // 列出目录中的 .jsonl 文件
+            // 使用 stat 获取文件列表和修改时间
+            // 格式: 文件路径|修改时间戳
             val session = client.startSession()
-            val command = session.exec("ls -1t $claudeDir/*.jsonl 2>/dev/null || echo ''")
+            val command = session.exec(
+                "for f in $claudeDir/*.jsonl; do [ -f \"\$f\" ] && stat --format='%n|%Y' \"\$f\" 2>/dev/null; done | sort -t'|' -k2 -rn"
+            )
 
             val output = ByteArrayOutputStream()
             command.inputStream.copyTo(output)
@@ -64,15 +69,21 @@ class ConversationFetcher @Inject constructor() {
 
             val files = output.toString(Charsets.UTF_8)
                 .lines()
-                .filter { it.isNotBlank() && it.endsWith(".jsonl") }
-                .map { filePath ->
-                    val fileName = filePath.substringAfterLast("/")
-                    val sessionId = fileName.removeSuffix(".jsonl")
-                    ConversationFileInfo(
-                        sessionId = sessionId,
-                        filePath = filePath,
-                        projectPath = projectPath
-                    )
+                .filter { it.isNotBlank() && it.contains("|") }
+                .mapNotNull { line ->
+                    val parts = line.split("|")
+                    if (parts.size == 2) {
+                        val filePath = parts[0]
+                        val modTime = parts[1].toLongOrNull() ?: 0L
+                        val fileName = filePath.substringAfterLast("/")
+                        val sessionId = fileName.removeSuffix(".jsonl")
+                        ConversationFileInfo(
+                            sessionId = sessionId,
+                            filePath = filePath,
+                            projectPath = projectPath,
+                            modificationTime = modTime
+                        )
+                    } else null
                 }
 
             Result.success(files)
@@ -87,12 +98,21 @@ class ConversationFetcher @Inject constructor() {
     }
 
     /**
-     * 获取单个对话文件内容
+     * 获取单个对话文件内容（优先使用缓存）
      */
     suspend fun fetchConversationFile(
         config: SshConfig,
         fileInfo: ConversationFileInfo
     ): Result<String> = withContext(Dispatchers.IO) {
+        // 检查缓存是否有效
+        if (cache.isCacheValid(fileInfo.sessionId, fileInfo.projectPath, fileInfo.modificationTime)) {
+            val cachedContent = cache.getCachedContent(fileInfo.sessionId, fileInfo.projectPath)
+            if (cachedContent != null) {
+                return@withContext Result.success(cachedContent)
+            }
+        }
+
+        // 缓存无效，从远程下载
         var client: SSHClient? = null
         var tempKeyFile: File? = null
 
@@ -123,6 +143,15 @@ class ConversationFetcher @Inject constructor() {
             session.close()
 
             val content = output.toString(Charsets.UTF_8)
+
+            // 保存到缓存
+            cache.saveToCache(
+                sessionId = fileInfo.sessionId,
+                projectPath = fileInfo.projectPath,
+                content = content,
+                remoteModTime = fileInfo.modificationTime
+            )
+
             Result.success(content)
         } catch (e: Exception) {
             Result.failure(e)
@@ -165,5 +194,6 @@ class ConversationFetcher @Inject constructor() {
 data class ConversationFileInfo(
     val sessionId: String,
     val filePath: String,
-    val projectPath: String
+    val projectPath: String,
+    val modificationTime: Long = 0L
 )
