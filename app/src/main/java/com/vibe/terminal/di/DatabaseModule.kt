@@ -8,11 +8,13 @@ import com.vibe.terminal.data.local.dao.ConversationDao
 import com.vibe.terminal.data.local.dao.MachineDao
 import com.vibe.terminal.data.local.dao.ProjectDao
 import com.vibe.terminal.data.local.database.VibeDatabase
+import com.vibe.terminal.data.security.DatabaseKeyManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import javax.inject.Singleton
 
 @Module
@@ -73,12 +75,23 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): VibeDatabase {
+    fun provideDatabase(
+        @ApplicationContext context: Context,
+        keyManager: DatabaseKeyManager
+    ): VibeDatabase {
+        // 加载 SQLCipher 本地库
+        System.loadLibrary("sqlcipher")
+
+        // 获取加密密钥
+        val passphrase = keyManager.getOrCreateDatabaseKey()
+
+        // 创建加密数据库
         return Room.databaseBuilder(
             context,
             VibeDatabase::class.java,
             "vibe_terminal.db"
         )
+        .openHelperFactory(SupportOpenHelperFactory(passphrase))
         .addMigrations(MIGRATION_1_2)
         .fallbackToDestructiveMigration()
         .build()
