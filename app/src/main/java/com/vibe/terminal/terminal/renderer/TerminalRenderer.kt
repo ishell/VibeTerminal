@@ -273,6 +273,7 @@ fun TerminalRenderer(
                         val totalDragY = change.position.y - swipeStartY
 
                         // Check if this is a horizontal swipe (more horizontal than vertical)
+                        // Only horizontal swipe switches panels; vertical is reserved for scrolling
                         if (abs(totalDragX) > abs(totalDragY) * 2 && abs(totalDragX) > 150) {
                             if (!isSwipeGesture) {
                                 isSwipeGesture = true
@@ -281,18 +282,6 @@ fun TerminalRenderer(
                                     onSwipeRight()  // Swipe right -> previous panel
                                 } else {
                                     onSwipeLeft()   // Swipe left -> next panel
-                                }
-                            }
-                        }
-                        // Check if this is a vertical swipe (more vertical than horizontal)
-                        else if (abs(totalDragY) > abs(totalDragX) * 2 && abs(totalDragY) > 200) {
-                            if (!isSwipeGesture) {
-                                isSwipeGesture = true
-                                change.consume()
-                                if (totalDragY > 0) {
-                                    onSwipeDown()  // Swipe down -> focus panel below
-                                } else {
-                                    onSwipeUp()    // Swipe up -> focus panel above
                                 }
                             }
                         } else if (!isSwipeGesture) {

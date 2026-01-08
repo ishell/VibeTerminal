@@ -265,14 +265,8 @@ fun TerminalScreen(
                             // Swipe right -> previous panel
                             viewModel.focusPreviousPanel()
                         },
-                        onSwipeUp = {
-                            // Swipe up -> focus panel above
-                            viewModel.focusPanelUp()
-                        },
-                        onSwipeDown = {
-                            // Swipe down -> focus panel below
-                            viewModel.focusPanelDown()
-                        },
+                        // Vertical swipe is now used for scrolling within panel (viewing history)
+                        // Panel up/down navigation removed to avoid conflict with scroll gesture
                         onTwoFingerSwipeLeft = {
                             // Two-finger swipe left -> next tab
                             viewModel.goToNextTab()
