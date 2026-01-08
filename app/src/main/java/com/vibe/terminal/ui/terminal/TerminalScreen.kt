@@ -1,5 +1,7 @@
 package com.vibe.terminal.ui.terminal
 
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -80,6 +83,7 @@ import com.vibe.terminal.ui.theme.StatusConnected
 import com.vibe.terminal.ui.theme.StatusConnecting
 import com.vibe.terminal.ui.theme.StatusDisconnected
 import com.vibe.terminal.ui.theme.StatusError
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,10 +93,50 @@ fun TerminalScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val screenTimeoutMinutes by viewModel.screenTimeoutMinutes.collectAsState()
 
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var inputText by remember { mutableStateOf("") }
+
+    // Get activity for window flags
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity
+
+    // Keep screen on based on user preference
+    DisposableEffect(screenTimeoutMinutes, connectionState) {
+        val window = activity?.window
+
+        when {
+            // System default - don't modify window flags
+            screenTimeoutMinutes == 0 -> {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            // Always on (-1) or custom timeout when connected
+            connectionState is SshConnectionState.Connected -> {
+                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            // Not connected - follow system default
+            else -> {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+
+        onDispose {
+            // Clear flag when leaving the screen
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // Handle custom timeout (turn off keep screen on after specified minutes)
+    LaunchedEffect(screenTimeoutMinutes, connectionState) {
+        if (screenTimeoutMinutes > 0 && connectionState is SshConnectionState.Connected) {
+            // Wait for the specified timeout
+            delay(screenTimeoutMinutes * 60 * 1000L)
+            // After timeout, clear the flag
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {

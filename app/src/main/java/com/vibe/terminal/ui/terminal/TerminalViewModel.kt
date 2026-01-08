@@ -3,6 +3,7 @@ package com.vibe.terminal.ui.terminal
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.terminal.data.preferences.UserPreferences
 import com.vibe.terminal.data.ssh.SshClient
 import com.vibe.terminal.data.ssh.SshConfig
 import com.vibe.terminal.data.ssh.SshConnectionState
@@ -15,8 +16,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -29,7 +32,8 @@ class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val projectRepository: ProjectRepository,
     private val machineRepository: MachineRepository,
-    private val sshClient: SshClient
+    private val sshClient: SshClient,
+    private val userPreferences: UserPreferences
 ) : ViewModel() {
 
     private val projectId: String = savedStateHandle["projectId"] ?: ""
@@ -38,6 +42,19 @@ class TerminalViewModel @Inject constructor(
     val uiState: StateFlow<TerminalUiState> = _uiState.asStateFlow()
 
     val connectionState: StateFlow<SshConnectionState> = sshClient.connectionState
+
+    /**
+     * Screen timeout setting in minutes
+     * 0 = System default
+     * -1 = Always on
+     * Other = Custom timeout in minutes
+     */
+    val screenTimeoutMinutes: StateFlow<Int> = userPreferences.screenTimeout
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = UserPreferences.DEFAULT_SCREEN_TIMEOUT
+        )
 
     val emulator = TerminalEmulator(columns = 80, rows = 24)
 
