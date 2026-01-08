@@ -98,7 +98,8 @@ class ProjectDetailViewModel @Inject constructor(
                     for (fileInfo in files.take(10)) {
                         val sessionResult = conversationFetcher.fetchAndParseConversation(
                             config = sshConfig,
-                            fileInfo = fileInfo
+                            fileInfo = fileInfo,
+                            projectId = project.id
                         )
                         sessionResult.onSuccess { session ->
                             sessions.add(session)
@@ -148,7 +149,8 @@ class ProjectDetailViewModel @Inject constructor(
                     for (fileInfo in files.take(10)) {
                         val sessionResult = conversationFetcher.fetchAndParseConversation(
                             config = sshConfig,
-                            fileInfo = fileInfo
+                            fileInfo = fileInfo,
+                            projectId = project.id
                         )
                         sessionResult.onSuccess { session ->
                             sessions.add(session)
