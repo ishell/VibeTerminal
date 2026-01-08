@@ -74,16 +74,19 @@ fun getTerminalFontFamily(fontPreference: String): FontFamily {
 }
 
 /**
- * Check if a character is a wide character (CJK, fullwidth, etc.)
+ * Check if a character string is a wide character (CJK, fullwidth, etc.)
  * Wide characters typically occupy 2 cells in terminal
  */
-private fun isWideChar(char: Char): Boolean {
-    val code = char.code
+private fun isWideChar(char: String): Boolean {
+    if (char.isEmpty()) return false
+    val code = char.codePointAt(0)
     return when {
         // CJK Unified Ideographs
         code in 0x4E00..0x9FFF -> true
         // CJK Unified Ideographs Extension A
         code in 0x3400..0x4DBF -> true
+        // CJK Unified Ideographs Extension B-F
+        code in 0x20000..0x2FA1F -> true
         // CJK Compatibility Ideographs
         code in 0xF900..0xFAFF -> true
         // Hangul Syllables
@@ -109,13 +112,13 @@ private fun isWideChar(char: Char): Boolean {
 /**
  * Get the appropriate font family for a character
  * Uses system default font only for CJK characters (needs Noto Sans CJK)
- * Other fonts have good monospace coverage for ASCII/symbols
+ * Other fonts have good monospace coverage for ASCII/symbols/Nerd Font icons
  */
-private fun getFontForChar(char: Char, baseFontFamily: FontFamily): FontFamily {
+private fun getFontForChar(char: String, baseFontFamily: FontFamily): FontFamily {
     return if (isWideChar(char)) {
         FontFamily.Default  // CJK uses system font
     } else {
-        baseFontFamily  // Use selected font for other characters
+        baseFontFamily  // Use selected font for other characters (including Nerd Font icons)
     }
 }
 
@@ -400,7 +403,7 @@ private fun DrawScope.drawTerminal(
             }
 
             // 绘制字符 - 确保有足够空间
-            if (cell.character != ' ' && cell.character != '\u0000') {
+            if (cell.character.isNotEmpty() && cell.character != " " && cell.character != "\u0000") {
                 // 只在有足够空间时绘制文本
                 val availableWidth = canvasWidth - x
                 if (availableWidth > 0) {
@@ -435,7 +438,7 @@ private fun DrawScope.drawTerminal(
 
                     drawText(
                         textMeasurer = textMeasurer,
-                        text = cell.character.toString(),
+                        text = cell.character,
                         style = style,
                         topLeft = Offset(x, y)
                     )

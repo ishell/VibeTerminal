@@ -2,9 +2,10 @@ package com.vibe.terminal.terminal.emulator
 
 /**
  * 终端单元格
+ * character 使用 String 以支持 Unicode 补充平面字符（如 Nerd Font 图标）
  */
 data class TerminalCell(
-    val character: Char = ' ',
+    val character: String = " ",
     val attribute: CharacterAttribute = CharacterAttribute.DEFAULT,
     val width: Int = 1  // 1 for normal, 2 for wide characters (CJK)
 ) {
@@ -31,13 +32,13 @@ class TerminalRow(private val columns: Int) {
 
     fun clear(attribute: CharacterAttribute = CharacterAttribute.DEFAULT) {
         for (i in 0 until columns) {
-            cells[i] = TerminalCell(' ', attribute)
+            cells[i] = TerminalCell(" ", attribute)
         }
     }
 
     fun clearRange(start: Int, end: Int, attribute: CharacterAttribute = CharacterAttribute.DEFAULT) {
         for (i in start until minOf(end, columns)) {
-            cells[i] = TerminalCell(' ', attribute)
+            cells[i] = TerminalCell(" ", attribute)
         }
     }
 

@@ -43,34 +43,35 @@ class TerminalBuffer(
     }
 
     /**
-     * Check if a character is a wide character (CJK, fullwidth, etc.)
+     * Check if a code point is a wide character (CJK, fullwidth, etc.)
      * Wide characters occupy 2 cells in terminal
      */
-    private fun isWideChar(char: Char): Boolean {
-        val code = char.code
+    private fun isWideCodePoint(codePoint: Int): Boolean {
         return when {
             // CJK Unified Ideographs
-            code in 0x4E00..0x9FFF -> true
+            codePoint in 0x4E00..0x9FFF -> true
             // CJK Unified Ideographs Extension A
-            code in 0x3400..0x4DBF -> true
+            codePoint in 0x3400..0x4DBF -> true
+            // CJK Unified Ideographs Extension B-F
+            codePoint in 0x20000..0x2FA1F -> true
             // CJK Compatibility Ideographs
-            code in 0xF900..0xFAFF -> true
+            codePoint in 0xF900..0xFAFF -> true
             // Hangul Syllables
-            code in 0xAC00..0xD7AF -> true
+            codePoint in 0xAC00..0xD7AF -> true
             // Fullwidth Forms
-            code in 0xFF00..0xFFEF -> true
+            codePoint in 0xFF00..0xFFEF -> true
             // CJK Symbols and Punctuation
-            code in 0x3000..0x303F -> true
+            codePoint in 0x3000..0x303F -> true
             // Hiragana
-            code in 0x3040..0x309F -> true
+            codePoint in 0x3040..0x309F -> true
             // Katakana
-            code in 0x30A0..0x30FF -> true
+            codePoint in 0x30A0..0x30FF -> true
             // Bopomofo
-            code in 0x3100..0x312F -> true
+            codePoint in 0x3100..0x312F -> true
             // CJK Radicals
-            code in 0x2E80..0x2EFF -> true
+            codePoint in 0x2E80..0x2EFF -> true
             // Enclosed CJK Letters
-            code in 0x3200..0x32FF -> true
+            codePoint in 0x3200..0x32FF -> true
             else -> false
         }
     }
@@ -97,9 +98,14 @@ class TerminalBuffer(
 
     /**
      * 在当前光标位置写入字符
+     * @param char 字符串（支持补充平面字符如 Nerd Font 图标）
      */
-    fun writeChar(char: Char) {
-        val isWide = isWideChar(char)
+    fun writeChar(char: String) {
+        if (char.isEmpty()) return
+
+        // Get the first code point for width calculation
+        val codePoint = char.codePointAt(0)
+        val isWide = isWideCodePoint(codePoint)
         val charWidth = if (isWide) 2 else 1
 
         // 如果宽字符无法在当前行末尾放下，先换行
@@ -117,8 +123,8 @@ class TerminalBuffer(
 
         // 宽字符需要清除下一个cell（占位符）
         if (isWide && cursorCol + 1 < columns) {
-            // 使用空字符作为宽字符的第二部分占位
-            setCell(cursorRow, cursorCol + 1, TerminalCell('\u0000', currentAttribute))
+            // 使用空字符串作为宽字符的第二部分占位
+            setCell(cursorRow, cursorCol + 1, TerminalCell("", currentAttribute))
         }
 
         cursorCol += charWidth

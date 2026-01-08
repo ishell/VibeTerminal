@@ -145,7 +145,9 @@ class TerminalEmulator(
 
     // ==================== AnsiHandler 实现 ====================
 
-    override fun printChar(char: Char) {
+    override fun printCodePoint(codePoint: Int) {
+        // Convert code point to String (handles supplementary characters automatically)
+        val char = StringBuilder().appendCodePoint(codePoint).toString()
         buffer.writeChar(char)
     }
 
@@ -243,7 +245,7 @@ class TerminalEmulator(
         for (i in 0 until n) {
             val col = buffer.cursorCol + i
             if (col < buffer.columns) {
-                buffer.setCell(buffer.cursorRow, col, TerminalCell(' ', buffer.currentAttribute))
+                buffer.setCell(buffer.cursorRow, col, TerminalCell(" ", buffer.currentAttribute))
             }
         }
     }

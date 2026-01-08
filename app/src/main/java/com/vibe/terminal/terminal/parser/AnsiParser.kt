@@ -60,7 +60,7 @@ class AnsiParser(
                         // Invalid UTF-8 lead byte or continuation byte without lead
                         else -> {
                             // Treat as Latin-1 for compatibility
-                            handler.printChar(byte.toChar())
+                            handler.printCodePoint(byte)
                         }
                     }
                 }
@@ -91,17 +91,7 @@ class AnsiParser(
     }
 
     private fun emitCodepoint(codepoint: Int) {
-        if (codepoint <= 0xFFFF) {
-            // BMP character
-            handler.printChar(codepoint.toChar())
-        } else {
-            // Supplementary character - emit as surrogate pair
-            val adjusted = codepoint - 0x10000
-            val highSurrogate = ((adjusted shr 10) and 0x3FF) + 0xD800
-            val lowSurrogate = (adjusted and 0x3FF) + 0xDC00
-            handler.printChar(highSurrogate.toChar())
-            handler.printChar(lowSurrogate.toChar())
-        }
+        handler.printCodePoint(codepoint)
     }
 
     private fun handleEscapeSequence(byte: Int) {
@@ -125,7 +115,7 @@ class AnsiParser(
             0x09 -> handler.tab()
             0x0A, 0x0B, 0x0C -> handler.lineFeed()
             0x0D -> handler.carriageReturn()
-            in 0x20..0x7E -> handler.printChar(byte.toChar())
+            in 0x20..0x7E -> handler.printCodePoint(byte)
         }
     }
 
@@ -384,8 +374,8 @@ class AnsiParser(
  * ANSI序列处理接口
  */
 interface AnsiHandler {
-    // 打印字符
-    fun printChar(char: Char)
+    // 打印字符 (使用 code point 以支持补充平面字符)
+    fun printCodePoint(codePoint: Int)
 
     // 控制字符
     fun bell()
