@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.terminal.data.conversation.ConversationFetcher
 import com.vibe.terminal.data.ssh.SshConfig
-import com.vibe.terminal.data.ssh.SshKeyLoader
+import com.vibe.terminal.data.ssh.SshConnectionPool
 import com.vibe.terminal.domain.model.ConversationSession
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
@@ -23,18 +23,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import net.schmizz.sshj.DefaultConfig
-import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val projectRepository: ProjectRepository,
     private val machineRepository: MachineRepository,
-    private val conversationFetcher: ConversationFetcher
+    private val conversationFetcher: ConversationFetcher,
+    private val sshConnectionPool: SshConnectionPool
 ) : ViewModel() {
 
     private val _projects = projectRepository.getAllProjects()
@@ -79,39 +76,30 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _dialogState.update { it.copy(isLoadingSessions = true, sessionError = null) }
 
+            val sshConfig = SshConfig(
+                host = machine.host,
+                port = machine.port,
+                username = machine.username,
+                authMethod = when (machine.authType) {
+                    Machine.AuthType.PASSWORD -> SshConfig.AuthMethod.Password(machine.password ?: "")
+                    Machine.AuthType.SSH_KEY -> SshConfig.AuthMethod.PublicKey(
+                        privateKey = machine.privateKey ?: "",
+                        passphrase = machine.passphrase
+                    )
+                }
+            )
+
             val result = withContext(Dispatchers.IO) {
-                var client: SSHClient? = null
-                var keyResult: com.vibe.terminal.data.ssh.SshKeyLoadResult? = null
                 try {
-                    client = SSHClient(DefaultConfig()).apply {
-                        addHostKeyVerifier(PromiscuousVerifier())
-                        connect(machine.host, machine.port)
-
-                        when (machine.authType) {
-                            Machine.AuthType.PASSWORD -> {
-                                authPassword(machine.username, machine.password ?: "")
-                            }
-                            Machine.AuthType.SSH_KEY -> {
-                                keyResult = SshKeyLoader.loadKey(
-                                    machine.privateKey ?: "",
-                                    machine.passphrase
-                                )
-                                authPublickey(machine.username, keyResult!!.keyProvider)
-                            }
-                        }
-                    }
-
-                    // Execute zellij list-sessions
-                    val listSession = client.startSession()
-                    val listCommand = listSession.exec("zellij list-sessions -n 2>/dev/null || zellij list-sessions 2>/dev/null || echo ''")
-                    listCommand.join(10, TimeUnit.SECONDS)
-
-                    val output = listCommand.inputStream.bufferedReader().readText()
-                    listSession.close()
+                    // 使用连接池执行命令
+                    val listOutput = sshConnectionPool.executeCommand(
+                        sshConfig,
+                        "zellij list-sessions -n 2>/dev/null || zellij list-sessions 2>/dev/null || echo ''"
+                    ).getOrThrow()
 
                     // Parse session names
                     val ansiRegex = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
-                    val sessions = output.lines()
+                    val sessions = listOutput.lines()
                         .map { line -> ansiRegex.replace(line, "").trim() }
                         .filter { it.isNotBlank() && !it.contains("No active sessions") }
                         .map { line ->
@@ -124,13 +112,13 @@ class HomeViewModel @Inject constructor(
                     val sessionWorkingDirs = mutableMapOf<String, String>()
                     for (sessionName in sessions) {
                         try {
-                            val cwdSession = client.startSession()
-                            val cwdCommand = cwdSession.exec(
-                                "zellij -s '$sessionName' action dump-layout 2>/dev/null | grep -m1 'cwd \"' | sed 's/.*cwd \"\\([^\"]*\\)\".*/\\1/'"
-                            )
-                            cwdCommand.join(5, TimeUnit.SECONDS)
-                            val cwd = cwdCommand.inputStream.bufferedReader().readText().trim()
-                            cwdSession.close()
+                            val cwdOutput = sshConnectionPool.executeCommand(
+                                sshConfig,
+                                "zellij -s '$sessionName' action dump-layout 2>/dev/null | grep -m1 'cwd \"' | sed 's/.*cwd \"\\([^\"]*\\)\".*/\\1/'",
+                                timeoutSeconds = 5
+                            ).getOrNull()
+
+                            val cwd = cwdOutput?.trim() ?: ""
                             if (cwd.isNotBlank() && cwd.startsWith("/")) {
                                 sessionWorkingDirs[sessionName] = cwd
                             }
@@ -142,9 +130,6 @@ class HomeViewModel @Inject constructor(
                     Result.success(Pair(sessions, sessionWorkingDirs))
                 } catch (e: Exception) {
                     Result.failure(e)
-                } finally {
-                    keyResult?.cleanup()
-                    try { client?.disconnect() } catch (_: Exception) { }
                 }
             }
 

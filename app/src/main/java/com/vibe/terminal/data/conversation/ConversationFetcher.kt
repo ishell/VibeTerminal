@@ -1,24 +1,20 @@
 package com.vibe.terminal.data.conversation
 
 import com.vibe.terminal.data.ssh.SshConfig
-import com.vibe.terminal.data.ssh.SshKeyLoader
+import com.vibe.terminal.data.ssh.SshConnectionPool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import net.schmizz.sshj.DefaultConfig
-import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
-import java.io.ByteArrayOutputStream
-import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * 从远程服务器获取 Claude Code 对话历史
- * 支持本地缓存以提升性能
+ * 支持本地缓存和SSH连接复用以提升性能
  */
 @Singleton
 class ConversationFetcher @Inject constructor(
-    private val cache: ConversationCache
+    private val cache: ConversationCache,
+    private val connectionPool: SshConnectionPool
 ) {
 
     /**
@@ -31,43 +27,16 @@ class ConversationFetcher @Inject constructor(
         config: SshConfig,
         projectPath: String
     ): Result<List<ConversationFileInfo>> = withContext(Dispatchers.IO) {
-        var client: SSHClient? = null
-        var tempKeyFile: File? = null
-
         try {
-            client = SSHClient(DefaultConfig()).apply {
-                addHostKeyVerifier(PromiscuousVerifier())
-                connect(config.host, config.port)
-
-                when (val auth = config.authMethod) {
-                    is SshConfig.AuthMethod.Password -> {
-                        authPassword(config.username, auth.password)
-                    }
-                    is SshConfig.AuthMethod.PublicKey -> {
-                        val keyResult = SshKeyLoader.loadKey(auth.privateKey, auth.passphrase)
-                        tempKeyFile = keyResult.tempFile
-                        authPublickey(config.username, keyResult.keyProvider)
-                    }
-                }
-            }
-
             // 构建 Claude Code 对话目录路径
             val encodedPath = encodeProjectPath(projectPath)
             val claudeDir = "~/.claude/projects/$encodedPath"
 
-            // 使用 stat 获取文件列表和修改时间
-            // 格式: 文件路径|修改时间戳
-            val session = client.startSession()
-            val command = session.exec(
-                "for f in $claudeDir/*.jsonl; do [ -f \"\$f\" ] && stat --format='%n|%Y' \"\$f\" 2>/dev/null; done | sort -t'|' -k2 -rn"
-            )
+            // 使用连接池执行命令
+            val command = "for f in $claudeDir/*.jsonl; do [ -f \"\$f\" ] && stat --format='%n|%Y' \"\$f\" 2>/dev/null; done | sort -t'|' -k2 -rn"
+            val output = connectionPool.executeCommand(config, command).getOrThrow()
 
-            val output = ByteArrayOutputStream()
-            command.inputStream.copyTo(output)
-            command.join()
-            session.close()
-
-            val files = output.toString(Charsets.UTF_8)
+            val files = output
                 .lines()
                 .filter { it.isNotBlank() && it.contains("|") }
                 .mapNotNull { line ->
@@ -89,11 +58,6 @@ class ConversationFetcher @Inject constructor(
             Result.success(files)
         } catch (e: Exception) {
             Result.failure(e)
-        } finally {
-            try {
-                client?.disconnect()
-            } catch (_: Exception) { }
-            tempKeyFile?.delete()
         }
     }
 
@@ -113,36 +77,11 @@ class ConversationFetcher @Inject constructor(
         }
 
         // 缓存无效，从远程下载
-        var client: SSHClient? = null
-        var tempKeyFile: File? = null
-
         try {
-            client = SSHClient(DefaultConfig()).apply {
-                addHostKeyVerifier(PromiscuousVerifier())
-                connect(config.host, config.port)
-
-                when (val auth = config.authMethod) {
-                    is SshConfig.AuthMethod.Password -> {
-                        authPassword(config.username, auth.password)
-                    }
-                    is SshConfig.AuthMethod.PublicKey -> {
-                        val keyResult = SshKeyLoader.loadKey(auth.privateKey, auth.passphrase)
-                        tempKeyFile = keyResult.tempFile
-                        authPublickey(config.username, keyResult.keyProvider)
-                    }
-                }
-            }
-
-            // 读取文件内容
-            val session = client.startSession()
-            val command = session.exec("cat '${fileInfo.filePath}'")
-
-            val output = ByteArrayOutputStream()
-            command.inputStream.copyTo(output)
-            command.join()
-            session.close()
-
-            val content = output.toString(Charsets.UTF_8)
+            val content = connectionPool.executeCommand(
+                config,
+                "cat '${fileInfo.filePath}'"
+            ).getOrThrow()
 
             // 保存到缓存
             cache.saveToCache(
@@ -155,11 +94,6 @@ class ConversationFetcher @Inject constructor(
             Result.success(content)
         } catch (e: Exception) {
             Result.failure(e)
-        } finally {
-            try {
-                client?.disconnect()
-            } catch (_: Exception) { }
-            tempKeyFile?.delete()
         }
     }
 
