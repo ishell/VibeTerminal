@@ -55,8 +55,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vibe.terminal.R
 import com.vibe.terminal.domain.model.Machine
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,10 +90,10 @@ fun MachineEditScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (uiState.name.isEmpty()) "New Machine" else "Edit Machine") },
+                title = { Text(if (uiState.name.isEmpty()) stringResource(R.string.new_machine) else stringResource(R.string.edit_machine)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 }
             )
@@ -107,8 +109,8 @@ fun MachineEditScreen(
             OutlinedTextField(
                 value = uiState.name,
                 onValueChange = viewModel::updateName,
-                label = { Text("Name") },
-                placeholder = { Text("My Dev Machine") },
+                label = { Text(stringResource(R.string.name)) },
+                placeholder = { Text(stringResource(R.string.name_placeholder)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -119,8 +121,8 @@ fun MachineEditScreen(
                 OutlinedTextField(
                     value = uiState.host,
                     onValueChange = viewModel::updateHost,
-                    label = { Text("Host") },
-                    placeholder = { Text("192.168.1.100 or hostname.ts.net") },
+                    label = { Text(stringResource(R.string.host)) },
+                    placeholder = { Text(stringResource(R.string.host_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
@@ -128,7 +130,7 @@ fun MachineEditScreen(
                 OutlinedTextField(
                     value = uiState.port,
                     onValueChange = viewModel::updatePort,
-                    label = { Text("Port") },
+                    label = { Text(stringResource(R.string.port)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.width(80.dp)
@@ -140,7 +142,7 @@ fun MachineEditScreen(
             OutlinedTextField(
                 value = uiState.username,
                 onValueChange = viewModel::updateUsername,
-                label = { Text("Username") },
+                label = { Text(stringResource(R.string.username)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -148,7 +150,7 @@ fun MachineEditScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Authentication",
+                text = stringResource(R.string.authentication),
                 style = MaterialTheme.typography.titleMedium
             )
 
@@ -170,7 +172,7 @@ fun MachineEditScreen(
                     onClick = null
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Password")
+                Text(stringResource(R.string.password))
             }
 
             Row(
@@ -189,7 +191,7 @@ fun MachineEditScreen(
                     onClick = null
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("SSH Key")
+                Text(stringResource(R.string.ssh_key))
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -199,7 +201,7 @@ fun MachineEditScreen(
                     PasswordField(
                         value = uiState.password,
                         onValueChange = viewModel::updatePassword,
-                        label = "Password"
+                        label = stringResource(R.string.password)
                     )
                 }
                 Machine.AuthType.SSH_KEY -> {
@@ -227,12 +229,12 @@ fun MachineEditScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "密钥已配置",
+                                        stringResource(R.string.key_configured),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                     Text(
-                                        "${uiState.privateKey.lines().size} 行",
+                                        stringResource(R.string.key_lines, uiState.privateKey.lines().size),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                     )
@@ -240,7 +242,7 @@ fun MachineEditScreen(
                                 OutlinedButton(
                                     onClick = { viewModel.updatePrivateKey("") }
                                 ) {
-                                    Text("清除")
+                                    Text(stringResource(R.string.clear))
                                 }
                             }
                         }
@@ -260,7 +262,7 @@ fun MachineEditScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("更换密钥文件")
+                            Text(stringResource(R.string.change_key_file))
                         }
                     } else {
                         // 无密钥 - 选择文件按钮
@@ -276,7 +278,7 @@ fun MachineEditScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("选择密钥文件")
+                            Text(stringResource(R.string.select_key_file))
                         }
                     }
 
@@ -285,7 +287,7 @@ fun MachineEditScreen(
                     PasswordField(
                         value = uiState.passphrase,
                         onValueChange = viewModel::updatePassphrase,
-                        label = "Passphrase (optional)"
+                        label = stringResource(R.string.passphrase_optional)
                     )
                 }
             }
@@ -314,7 +316,7 @@ fun MachineEditScreen(
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Connection successful!",
+                                stringResource(R.string.connection_successful),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -381,14 +383,14 @@ fun MachineEditScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        "Technical Details",
+                                        stringResource(R.string.technical_details),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onErrorContainer,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Icon(
                                         if (showDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = if (showDetails) "Hide" else "Show",
+                                        contentDescription = if (showDetails) stringResource(R.string.hide) else stringResource(R.string.show),
                                         tint = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                 }
@@ -426,9 +428,9 @@ fun MachineEditScreen(
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Testing...")
+                        Text(stringResource(R.string.testing))
                     } else {
-                        Text("Test Connection")
+                        Text(stringResource(R.string.test_connection))
                     }
                 }
 
@@ -437,7 +439,7 @@ fun MachineEditScreen(
                     enabled = uiState.isValid && !uiState.isSaving,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(if (uiState.isSaving) "Saving..." else "Save")
+                    Text(if (uiState.isSaving) stringResource(R.string.saving) else stringResource(R.string.save))
                 }
             }
         }

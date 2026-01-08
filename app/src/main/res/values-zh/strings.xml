@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VibeTerminal</string>
+
+    <!-- Common -->
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+    <string name="saving">保存中…</string>
+    <string name="create">创建</string>
+    <string name="clear">清除</string>
+    <string name="back">返回</string>
+    <string name="refresh">刷新</string>
+    <string name="retry">重试</string>
+    <string name="expand">展开</string>
+    <string name="collapse">收起</string>
+    <string name="show">显示</string>
+    <string name="hide">隐藏</string>
+    <string name="loading">加载中…</string>
+    <string name="error">错误</string>
+    <string name="settings">设置</string>
+
+    <!-- Home Screen -->
+    <string name="add_machine">添加机器</string>
+    <string name="new_project">新建项目</string>
+    <string name="no_machines">暂无机器配置</string>
+    <string name="no_projects">暂无项目</string>
+    <string name="tap_to_add_machine">点击 + 添加机器</string>
+    <string name="tap_to_add_project">点击 + 添加项目</string>
+
+    <!-- New Project Dialog -->
+    <string name="project_name">项目名称</string>
+    <string name="working_directory">工作目录</string>
+    <string name="working_directory_placeholder">/home/user/project</string>
+    <string name="working_directory_hint">Claude Code 历史记录的完整路径</string>
+    <string name="machine">机器</string>
+    <string name="select_machine">选择机器</string>
+    <string name="zellij_session">Zellij 会话</string>
+    <string name="zellij_session_optional">可选 - 用于终端附加</string>
+
+    <!-- Machine Edit Screen -->
+    <string name="new_machine">新建机器</string>
+    <string name="edit_machine">编辑机器</string>
+    <string name="name">名称</string>
+    <string name="name_placeholder">我的开发机</string>
+    <string name="host">主机</string>
+    <string name="host_placeholder">192.168.1.100 或 hostname.ts.net</string>
+    <string name="port">端口</string>
+    <string name="username">用户名</string>
+    <string name="authentication">认证方式</string>
+    <string name="password">密码</string>
+    <string name="ssh_key">SSH 密钥</string>
+    <string name="private_key">私钥</string>
+    <string name="passphrase_optional">密钥密码（可选）</string>
+    <string name="select_key_file">选择密钥文件</string>
+    <string name="change_key_file">更换密钥文件</string>
+    <string name="key_configured">密钥已配置</string>
+    <string name="key_lines">%d 行</string>
+    <string name="test_connection">测试连接</string>
+    <string name="testing">测试中…</string>
+    <string name="connection_successful">连接成功！</string>
+    <string name="technical_details">技术详情</string>
+
+    <!-- Project Detail Screen -->
+    <string name="project">项目</string>
+    <string name="session">会话</string>
+    <string name="open_terminal">打开终端</string>
+    <string name="loading_conversation_history">加载对话历史中…</string>
+    <string name="no_conversation_history">暂无对话历史</string>
+    <string name="view_by_session">会话</string>
+    <string name="view_by_time">时间</string>
+    <string name="session_segments">%d 个会话段</string>
+    <string name="time_segments">%d 个时间段（20分钟间隔）</string>
+    <string name="requests_count">%d 条请求</string>
+    <string name="responses_count">%d 条回复</string>
+
+    <!-- Conversation Detail -->
+    <string name="user_label">用户:</string>
+    <string name="system_label">系统:</string>
+    <string name="assistant_label">助手:</string>
+    <string name="assistant_responses">助手: %d 条回复</string>
+    <string name="thinking_label">思考</string>
+    <string name="tool_result_label">结果</string>
+    <string name="session_auto_continue">会话自动延续</string>
+    <string name="tool_execution">工具执行: %s</string>
+    <string name="thinking_in_progress">思考中…</string>
+    <string name="system_auto_response">系统自动响应</string>
+
+    <!-- Terminal Screen -->
+    <string name="retry_connection">重试连接</string>
+    <string name="connecting">连接中…</string>
+    <string name="disconnected">已断开</string>
+    <string name="connection_failed">连接失败</string>
+
+    <!-- Settings Screen -->
+    <string name="screen_timeout">屏幕超时</string>
+    <string name="about">关于</string>
+    <string name="version">版本</string>
+</resources>

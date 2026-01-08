@@ -1,3 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VibeTerminal</string>
+
+    <!-- Common -->
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="saving">Saving…</string>
+    <string name="create">Create</string>
+    <string name="clear">Clear</string>
+    <string name="back">Back</string>
+    <string name="refresh">Refresh</string>
+    <string name="retry">Retry</string>
+    <string name="expand">Expand</string>
+    <string name="collapse">Collapse</string>
+    <string name="show">Show</string>
+    <string name="hide">Hide</string>
+    <string name="loading">Loading…</string>
+    <string name="error">Error</string>
+    <string name="settings">Settings</string>
+
+    <!-- Home Screen -->
+    <string name="add_machine">Add Machine</string>
+    <string name="new_project">New Project</string>
+    <string name="no_machines">No machines configured</string>
+    <string name="no_projects">No projects yet</string>
+    <string name="tap_to_add_machine">Tap + to add a machine</string>
+    <string name="tap_to_add_project">Tap + to add a project</string>
+
+    <!-- New Project Dialog -->
+    <string name="project_name">Project Name</string>
+    <string name="working_directory">Working Directory</string>
+    <string name="working_directory_placeholder">/home/user/project</string>
+    <string name="working_directory_hint">Full path for Claude Code history</string>
+    <string name="machine">Machine</string>
+    <string name="select_machine">Select Machine</string>
+    <string name="zellij_session">Zellij Session</string>
+    <string name="zellij_session_optional">Optional - for terminal attachment</string>
+
+    <!-- Machine Edit Screen -->
+    <string name="new_machine">New Machine</string>
+    <string name="edit_machine">Edit Machine</string>
+    <string name="name">Name</string>
+    <string name="name_placeholder">My Dev Machine</string>
+    <string name="host">Host</string>
+    <string name="host_placeholder">192.168.1.100 or hostname.ts.net</string>
+    <string name="port">Port</string>
+    <string name="username">Username</string>
+    <string name="authentication">Authentication</string>
+    <string name="password">Password</string>
+    <string name="ssh_key">SSH Key</string>
+    <string name="private_key">Private Key</string>
+    <string name="passphrase_optional">Passphrase (optional)</string>
+    <string name="select_key_file">Select Key File</string>
+    <string name="change_key_file">Change Key File</string>
+    <string name="key_configured">Key Configured</string>
+    <string name="key_lines">%d lines</string>
+    <string name="test_connection">Test Connection</string>
+    <string name="testing">Testing…</string>
+    <string name="connection_successful">Connection successful!</string>
+    <string name="technical_details">Technical Details</string>
+
+    <!-- Project Detail Screen -->
+    <string name="project">Project</string>
+    <string name="session">Session</string>
+    <string name="open_terminal">Open Terminal</string>
+    <string name="loading_conversation_history">Loading conversation history…</string>
+    <string name="no_conversation_history">No conversation history</string>
+    <string name="view_by_session">Session</string>
+    <string name="view_by_time">Time</string>
+    <string name="session_segments">%d session segments</string>
+    <string name="time_segments">%d time segments (20 min interval)</string>
+    <string name="requests_count">%d requests</string>
+    <string name="responses_count">%d responses</string>
+
+    <!-- Conversation Detail -->
+    <string name="user_label">User:</string>
+    <string name="system_label">System:</string>
+    <string name="assistant_label">Assistant:</string>
+    <string name="assistant_responses">Assistant: %d response(s)</string>
+    <string name="thinking_label">Thinking</string>
+    <string name="tool_result_label">Result</string>
+    <string name="session_auto_continue">Session Auto-Continue</string>
+    <string name="tool_execution">Tool Execution: %s</string>
+    <string name="thinking_in_progress">Thinking…</string>
+    <string name="system_auto_response">System Auto Response</string>
+
+    <!-- Terminal Screen -->
+    <string name="retry_connection">Retry Connection</string>
+    <string name="connecting">Connecting…</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="connection_failed">Connection failed</string>
+
+    <!-- Settings Screen -->
+    <string name="screen_timeout">Screen Timeout</string>
+    <string name="about">About</string>
+    <string name="version">Version</string>
 </resources>
