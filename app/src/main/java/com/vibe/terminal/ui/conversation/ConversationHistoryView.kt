@@ -224,6 +224,17 @@ private fun SessionView(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
+                // 显示对话主题 (slug) 如果存在
+                if (session.slug != null) {
+                    Text(
+                        text = session.slug,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
                     text = formatSessionTime(session),
                     style = MaterialTheme.typography.labelMedium,

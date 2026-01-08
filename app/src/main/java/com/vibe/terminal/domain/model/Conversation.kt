@@ -52,7 +52,8 @@ data class ConversationSession(
     val startTime: Instant,
     val endTime: Instant,
     val totalUserMessages: Int,
-    val totalAssistantMessages: Int
+    val totalAssistantMessages: Int,
+    val slug: String? = null  // 对话主题/标题 (如 "elegant-watching-cherny")
 )
 
 /**
@@ -63,4 +64,17 @@ data class ProjectConversationHistory(
     val projectPath: String,
     val sessions: List<ConversationSession>,
     val lastUpdated: Instant
+)
+
+/**
+ * 对话主题（按 parentUuid 断点或时间间隔分组的多个 segment）
+ */
+data class ConversationTopic(
+    val id: String,
+    val title: String,                    // 主题标题（第一条用户消息的摘要）
+    val segments: List<ConversationSegment>,
+    val startTime: Instant,
+    val endTime: Instant,
+    val userMessageCount: Int,
+    val assistantMessageCount: Int
 )

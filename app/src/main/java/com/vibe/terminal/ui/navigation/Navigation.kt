@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.vibe.terminal.ui.home.HomeScreen
+import com.vibe.terminal.ui.project.ProjectDetailScreen
 import com.vibe.terminal.ui.settings.MachineEditScreen
 import com.vibe.terminal.ui.settings.SettingsScreen
 import com.vibe.terminal.ui.terminal.TerminalScreen
@@ -26,6 +27,9 @@ sealed class Screen(val route: String) {
             }
         }
     }
+    data object ProjectDetail : Screen("project/{projectId}") {
+        fun createRoute(projectId: String): String = "project/$projectId"
+    }
     data object Terminal : Screen("terminal/{projectId}") {
         fun createRoute(projectId: String): String = "terminal/$projectId"
     }
@@ -43,6 +47,9 @@ fun VibeNavHost(
             HomeScreen(
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToProjectDetail = { projectId ->
+                    navController.navigate(Screen.ProjectDetail.createRoute(projectId))
                 },
                 onNavigateToTerminal = { projectId ->
                     navController.navigate(Screen.Terminal.createRoute(projectId))
@@ -77,6 +84,25 @@ fun VibeNavHost(
             MachineEditScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            route = Screen.ProjectDetail.route,
+            arguments = listOf(
+                navArgument("projectId") {
+                    type = NavType.StringType
+                }
+            )
+        ) { backStackEntry ->
+            val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
+            ProjectDetailScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToTerminal = {
+                    navController.navigate(Screen.Terminal.createRoute(projectId))
                 }
             )
         }

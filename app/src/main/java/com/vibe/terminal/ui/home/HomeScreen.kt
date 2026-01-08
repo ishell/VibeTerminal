@@ -1,8 +1,5 @@
 package com.vibe.terminal.ui.home
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -37,7 +31,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
-import com.vibe.terminal.ui.conversation.ConversationHistoryView
 import com.vibe.terminal.ui.theme.StatusConnected
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,13 +59,13 @@ import com.vibe.terminal.ui.theme.StatusConnected
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     onNavigateToSettings: () -> Unit,
+    onNavigateToProjectDetail: (String) -> Unit,
     onNavigateToTerminal: (String) -> Unit,
     onNavigateToMachineEdit: (String?) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val showNewProjectDialog by viewModel.showNewProjectDialog.collectAsState()
     val dialogState by viewModel.dialogState.collectAsState()
-    val conversationStates by viewModel.conversationStates.collectAsState()
 
     Scaffold(
         topBar = {
@@ -125,12 +117,9 @@ fun HomeScreen(
                     ProjectList(
                         projects = uiState.projects,
                         machines = uiState.machines,
-                        conversationStates = conversationStates,
-                        onProjectClick = onNavigateToTerminal,
-                        onProjectDelete = viewModel::deleteProject,
-                        onFetchHistory = viewModel::fetchConversationHistory,
-                        onRefreshHistory = viewModel::refreshConversationHistory,
-                        onClearHistory = viewModel::clearConversationHistory
+                        onProjectClick = onNavigateToProjectDetail,
+                        onProjectTerminal = onNavigateToTerminal,
+                        onProjectDelete = viewModel::deleteProject
                     )
                 }
             }
@@ -222,12 +211,9 @@ private fun EmptyProjectState(
 private fun ProjectList(
     projects: List<Project>,
     machines: List<Machine>,
-    conversationStates: Map<String, ConversationHistoryState>,
     onProjectClick: (String) -> Unit,
-    onProjectDelete: (String) -> Unit,
-    onFetchHistory: (Project) -> Unit,
-    onRefreshHistory: (Project) -> Unit,
-    onClearHistory: (String) -> Unit
+    onProjectTerminal: (String) -> Unit,
+    onProjectDelete: (String) -> Unit
 ) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -235,21 +221,12 @@ private fun ProjectList(
     ) {
         items(projects, key = { it.id }) { project ->
             val machine = machines.find { it.id == project.machineId }
-            val historyState = conversationStates[project.id]
             ProjectCard(
                 project = project,
                 machine = machine,
-                historyState = historyState,
                 onClick = { onProjectClick(project.id) },
-                onDelete = { onProjectDelete(project.id) },
-                onToggleHistory = {
-                    if (historyState == null) {
-                        onFetchHistory(project)
-                    } else {
-                        onClearHistory(project.id)
-                    }
-                },
-                onRefreshHistory = { onRefreshHistory(project) }
+                onTerminal = { onProjectTerminal(project.id) },
+                onDelete = { onProjectDelete(project.id) }
             )
         }
     }
@@ -260,22 +237,19 @@ private fun ProjectList(
 private fun ProjectCard(
     project: Project,
     machine: Machine?,
-    historyState: ConversationHistoryState?,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
-    onToggleHistory: () -> Unit,
-    onRefreshHistory: () -> Unit
+    onTerminal: () -> Unit,
+    onDelete: () -> Unit
 ) {
-    val isExpanded = historyState != null
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        )
+        ),
+        onClick = onClick  // 点击卡片进入项目详情
     ) {
         Column {
-            // 主要内容行 - 可点击进入终端
+            // 主要内容行
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -309,27 +283,11 @@ private fun ProjectCard(
                     )
                 }
 
-                // 历史按钮
-                IconButton(onClick = onToggleHistory) {
-                    if (historyState?.isLoading == true) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.History,
-                            contentDescription = if (isExpanded) "Hide History" else "Show History",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                // 连接按钮
-                IconButton(onClick = onClick) {
+                // 终端按钮
+                IconButton(onClick = onTerminal) {
                     Icon(
-                        imageVector = Icons.Default.Folder,
-                        contentDescription = "Connect",
+                        imageVector = Icons.Default.Computer,
+                        contentDescription = "Open Terminal",
                         tint = StatusConnected
                     )
                 }
@@ -340,26 +298,6 @@ private fun ProjectCard(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete",
                         tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            // 对话历史展开区域
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                Column {
-                    HorizontalDivider()
-                    ConversationHistoryView(
-                        sessions = historyState?.sessions ?: emptyList(),
-                        isLoading = historyState?.isLoading ?: false,
-                        isRefreshing = historyState?.isRefreshing ?: false,
-                        error = historyState?.error,
-                        lastUpdated = historyState?.lastUpdated ?: 0L,
-                        onRefresh = onRefreshHistory,
-                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
