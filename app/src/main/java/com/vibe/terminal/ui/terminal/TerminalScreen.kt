@@ -242,6 +242,46 @@ fun TerminalScreen(
                             focusRequester.requestFocus()
                             keyboardController?.show()
                         },
+                        onDoubleTap = {
+                            // Double tap to toggle fullscreen panel
+                            viewModel.togglePanelFullscreen()
+                        },
+                        onPinchIn = {
+                            // Pinch in (fingers together) -> zoom in to single panel
+                            viewModel.enterPanelFullscreen()
+                        },
+                        onPinchOut = {
+                            // Pinch out (fingers apart) -> zoom out to show all panels
+                            viewModel.exitPanelFullscreen()
+                        },
+                        onSwipeLeft = {
+                            // Swipe left -> next panel
+                            viewModel.focusNextPanel()
+                        },
+                        onSwipeRight = {
+                            // Swipe right -> previous panel
+                            viewModel.focusPreviousPanel()
+                        },
+                        onSwipeUp = {
+                            // Swipe up -> focus panel above
+                            viewModel.focusPanelUp()
+                        },
+                        onSwipeDown = {
+                            // Swipe down -> focus panel below
+                            viewModel.focusPanelDown()
+                        },
+                        onTwoFingerSwipeLeft = {
+                            // Two-finger swipe left -> next tab
+                            viewModel.goToNextTab()
+                        },
+                        onTwoFingerSwipeRight = {
+                            // Two-finger swipe right -> previous tab
+                            viewModel.goToPreviousTab()
+                        },
+                        onThreeFingerTap = {
+                            // Three-finger tap -> toggle floating panes
+                            viewModel.toggleFloatingPanes()
+                        },
                         onSendInput = viewModel::sendInput
                     )
 

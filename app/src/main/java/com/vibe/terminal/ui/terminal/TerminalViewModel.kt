@@ -41,6 +41,10 @@ class TerminalViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TerminalUiState())
     val uiState: StateFlow<TerminalUiState> = _uiState.asStateFlow()
 
+    // Zellij panel mode state
+    private val _isPanelFullscreen = MutableStateFlow(false)
+    val isPanelFullscreen: StateFlow<Boolean> = _isPanelFullscreen.asStateFlow()
+
     val connectionState: StateFlow<SshConnectionState> = sshClient.connectionState
 
     /**
@@ -217,6 +221,130 @@ class TerminalViewModel @Inject constructor(
             val machine = _uiState.value.machine
             if (project != null && machine != null) {
                 connect(machine, project)
+            }
+        }
+    }
+
+    // ========== Zellij Panel Controls ==========
+
+    /**
+     * Toggle fullscreen mode for current panel
+     * Used for pinch-to-zoom and double-tap gestures
+     * Sends Ctrl+P, f (zellij pane mode -> fullscreen toggle)
+     */
+    fun togglePanelFullscreen() {
+        sendZellijKeybinding("f")
+        _isPanelFullscreen.value = !_isPanelFullscreen.value
+    }
+
+    /**
+     * Enter fullscreen mode (zoom in to single panel)
+     */
+    fun enterPanelFullscreen() {
+        if (!_isPanelFullscreen.value) {
+            sendZellijKeybinding("f")
+            _isPanelFullscreen.value = true
+        }
+    }
+
+    /**
+     * Exit fullscreen mode (zoom out to show all panels)
+     */
+    fun exitPanelFullscreen() {
+        if (_isPanelFullscreen.value) {
+            sendZellijKeybinding("f")
+            _isPanelFullscreen.value = false
+        }
+    }
+
+    /**
+     * Focus next panel (for swipe left gesture)
+     * Sends Ctrl+P, l (zellij pane mode -> focus right/next pane)
+     */
+    fun focusNextPanel() {
+        sendZellijKeybinding("l")
+    }
+
+    /**
+     * Focus previous panel (for swipe right gesture)
+     * Sends Ctrl+P, h (zellij pane mode -> focus left/previous pane)
+     */
+    fun focusPreviousPanel() {
+        sendZellijKeybinding("h")
+    }
+
+    /**
+     * Focus panel above (for swipe up gesture)
+     * Sends Ctrl+P, k (zellij pane mode -> focus up)
+     */
+    fun focusPanelUp() {
+        sendZellijKeybinding("k")
+    }
+
+    /**
+     * Focus panel below (for swipe down gesture)
+     * Sends Ctrl+P, j (zellij pane mode -> focus down)
+     */
+    fun focusPanelDown() {
+        sendZellijKeybinding("j")
+    }
+
+    /**
+     * Go to next tab (for two-finger swipe left gesture)
+     * Sends Alt+l (zellij default keybinding for next tab)
+     */
+    fun goToNextTab() {
+        sendAltKey('l')
+    }
+
+    /**
+     * Go to previous tab (for two-finger swipe right gesture)
+     * Sends Alt+h (zellij default keybinding for previous tab)
+     */
+    fun goToPreviousTab() {
+        sendAltKey('h')
+    }
+
+    /**
+     * Toggle floating panes (for three-finger tap)
+     * Sends Ctrl+P, w (zellij pane mode -> toggle floating)
+     */
+    fun toggleFloatingPanes() {
+        sendZellijKeybinding("w")
+    }
+
+    /**
+     * Send Alt+key combination for zellij shortcuts
+     */
+    private fun sendAltKey(key: Char) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Alt+key is sent as ESC followed by the key
+                outputStream?.write("\u001b${key}".toByteArray())
+                outputStream?.flush()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message) }
+            }
+        }
+    }
+
+    /**
+     * Send zellij keybinding sequence
+     * First sends Ctrl+P to enter pane mode, then the action key
+     */
+    private fun sendZellijKeybinding(actionKey: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Ctrl+P = \x10 (ASCII 16) to enter pane mode
+                // Then send the action key
+                outputStream?.write("\u0010".toByteArray())  // Ctrl+P
+                outputStream?.flush()
+                // Small delay to ensure pane mode is activated
+                kotlinx.coroutines.delay(50)
+                outputStream?.write(actionKey.toByteArray())  // Action key (f, n, p)
+                outputStream?.flush()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message) }
             }
         }
     }

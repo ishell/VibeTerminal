@@ -2,6 +2,8 @@ package com.vibe.terminal.terminal.renderer
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
@@ -32,6 +35,8 @@ import com.vibe.terminal.R
 import com.vibe.terminal.terminal.emulator.TerminalColor
 import com.vibe.terminal.terminal.emulator.TerminalEmulator
 import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * Terminal font family with Nerd Font support
@@ -98,6 +103,16 @@ fun TerminalRenderer(
     fontSize: Float = 14f,
     modifier: Modifier = Modifier,
     onTap: () -> Unit = {},
+    onDoubleTap: () -> Unit = {},
+    onPinchIn: () -> Unit = {},    // Zoom in (show single panel)
+    onPinchOut: () -> Unit = {},   // Zoom out (show all panels)
+    onSwipeLeft: () -> Unit = {},  // Next panel (horizontal)
+    onSwipeRight: () -> Unit = {}, // Previous panel (horizontal)
+    onSwipeUp: () -> Unit = {},    // Focus panel above
+    onSwipeDown: () -> Unit = {},  // Focus panel below
+    onTwoFingerSwipeLeft: () -> Unit = {},  // Next tab
+    onTwoFingerSwipeRight: () -> Unit = {}, // Previous tab
+    onThreeFingerTap: () -> Unit = {},      // Toggle floating panes
     onSendInput: (String) -> Unit = {}  // 用于发送方向键等输入
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -136,46 +151,150 @@ fun TerminalRenderer(
     // 滚动累积量
     var dragAccumulator by remember { mutableFloatStateOf(0f) }
 
+    // Swipe gesture tracking
+    var swipeStartX by remember { mutableFloatStateOf(0f) }
+    var swipeStartY by remember { mutableFloatStateOf(0f) }
+    var isSwipeGesture by remember { mutableStateOf(false) }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .background(colorScheme.background)
+            // Multi-finger gesture detection (pinch, two-finger swipe, three-finger tap)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    var initialDistance = 0f
+                    var hasPinched = false
+                    var hasTwoFingerSwiped = false
+                    var twoFingerStartX = 0f
+                    var hasThreeFingerTapped = false
+
+                    awaitFirstDown()
+
+                    do {
+                        val event = awaitPointerEvent()
+                        val pointers = event.changes.filter { it.pressed }
+
+                        // Three-finger tap detection
+                        if (pointers.size == 3 && !hasThreeFingerTapped) {
+                            hasThreeFingerTapped = true
+                            onThreeFingerTap()
+                            pointers.forEach { it.consume() }
+                        }
+
+                        if (pointers.size == 2) {
+                            val pos1 = pointers[0].position
+                            val pos2 = pointers[1].position
+                            val currentDistance = sqrt(
+                                (pos2.x - pos1.x) * (pos2.x - pos1.x) +
+                                (pos2.y - pos1.y) * (pos2.y - pos1.y)
+                            )
+                            val centerX = (pos1.x + pos2.x) / 2
+
+                            if (initialDistance == 0f) {
+                                initialDistance = currentDistance
+                                twoFingerStartX = centerX
+                            } else if (!hasPinched && !hasTwoFingerSwiped) {
+                                val pinchRatio = currentDistance / initialDistance
+                                val horizontalDrag = centerX - twoFingerStartX
+
+                                // Check for two-finger horizontal swipe first
+                                if (abs(horizontalDrag) > 150 && abs(pinchRatio - 1.0f) < 0.3f) {
+                                    hasTwoFingerSwiped = true
+                                    if (horizontalDrag > 0) {
+                                        onTwoFingerSwipeRight()  // Previous tab
+                                    } else {
+                                        onTwoFingerSwipeLeft()   // Next tab
+                                    }
+                                    pointers.forEach { it.consume() }
+                                }
+                                // Pinch in (zoom out, show all panels) - fingers move apart
+                                else if (pinchRatio > 1.5f) {
+                                    onPinchOut()
+                                    hasPinched = true
+                                    pointers.forEach { it.consume() }
+                                }
+                                // Pinch out (zoom in, show single panel) - fingers move together
+                                else if (pinchRatio < 0.67f) {
+                                    onPinchIn()
+                                    hasPinched = true
+                                    pointers.forEach { it.consume() }
+                                }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+            // Single finger swipe gesture detection
             .pointerInput(charSize) {
                 detectDragGestures(
-                    onDragStart = { dragAccumulator = 0f },
-                    onDragEnd = {
-                        // 拖动结束时，如果有小幅移动也处理
+                    onDragStart = { offset ->
+                        swipeStartX = offset.x
+                        swipeStartY = offset.y
+                        isSwipeGesture = false
                         dragAccumulator = 0f
                     },
+                    onDragEnd = {
+                        dragAccumulator = 0f
+                        isSwipeGesture = false
+                    },
                     onDrag = { change, dragAmount ->
-                        change.consume()
-                        // 累积垂直拖动距离
-                        dragAccumulator += dragAmount.y
+                        val totalDragX = change.position.x - swipeStartX
+                        val totalDragY = change.position.y - swipeStartY
 
-                        // 每移动2行高度，触发一次滚动
-                        val lineHeight = charSize.height
-                        val scrollThreshold = lineHeight * 2
-                        if (lineHeight > 0 && scrollThreshold > 0) {
-                            val scrollCount = (dragAccumulator / scrollThreshold).toInt()
-                            if (scrollCount != 0) {
-                                if (emulator.isAlternateScreenMode) {
-                                    // 在 alternate screen mode 中，发送鼠标滚轮事件
-                                    // SGR 编码: \x1b[<button;x;yM  (button: 64=wheel up, 65=wheel down)
-                                    val wheelButton = if (scrollCount > 0) 64 else 65
-                                    repeat(kotlin.math.abs(scrollCount)) {
-                                        // 发送鼠标滚轮事件 (位置设为中心)
-                                        onSendInput("\u001b[<$wheelButton;40;12M")
-                                    }
+                        // Check if this is a horizontal swipe (more horizontal than vertical)
+                        if (abs(totalDragX) > abs(totalDragY) * 2 && abs(totalDragX) > 150) {
+                            if (!isSwipeGesture) {
+                                isSwipeGesture = true
+                                change.consume()
+                                if (totalDragX > 0) {
+                                    onSwipeRight()  // Swipe right -> previous panel
                                 } else {
-                                    // 普通模式下滚动历史缓冲区
-                                    emulator.scrollView(scrollCount * 2)
+                                    onSwipeLeft()   // Swipe left -> next panel
                                 }
-                                dragAccumulator -= scrollCount * scrollThreshold
+                            }
+                        }
+                        // Check if this is a vertical swipe (more vertical than horizontal)
+                        else if (abs(totalDragY) > abs(totalDragX) * 2 && abs(totalDragY) > 200) {
+                            if (!isSwipeGesture) {
+                                isSwipeGesture = true
+                                change.consume()
+                                if (totalDragY > 0) {
+                                    onSwipeDown()  // Swipe down -> focus panel below
+                                } else {
+                                    onSwipeUp()    // Swipe up -> focus panel above
+                                }
+                            }
+                        } else if (!isSwipeGesture) {
+                            // Vertical scroll handling (small movements)
+                            change.consume()
+                            // 累积垂直拖动距离
+                            dragAccumulator += dragAmount.y
+
+                            // 每移动2行高度，触发一次滚动
+                            val lineHeight = charSize.height
+                            val scrollThreshold = lineHeight * 2
+                            if (lineHeight > 0 && scrollThreshold > 0) {
+                                val scrollCount = (dragAccumulator / scrollThreshold).toInt()
+                                if (scrollCount != 0) {
+                                    if (emulator.isAlternateScreenMode) {
+                                        // 在 alternate screen mode 中，发送鼠标滚轮事件
+                                        val wheelButton = if (scrollCount > 0) 64 else 65
+                                        repeat(kotlin.math.abs(scrollCount)) {
+                                            onSendInput("\u001b[<$wheelButton;40;12M")
+                                        }
+                                    } else {
+                                        // 普通模式下滚动历史缓冲区
+                                        emulator.scrollView(scrollCount * 2)
+                                    }
+                                    dragAccumulator -= scrollCount * scrollThreshold
+                                }
                             }
                         }
                     }
                 )
             }
+            // Tap and double-tap gesture detection
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
@@ -183,6 +302,9 @@ fun TerminalRenderer(
                             emulator.resetScroll()
                         }
                         onTap()
+                    },
+                    onDoubleTap = {
+                        onDoubleTap()
                     }
                 )
             }
