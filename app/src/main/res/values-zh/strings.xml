@@ -122,4 +122,17 @@
     <string name="font_jetbrains_mono_desc">流行的编程字体，支持 Nerd Font 图标</string>
     <string name="font_system_mono">系统等宽字体</string>
     <string name="font_system_mono_desc">使用系统默认等宽字体</string>
+
+    <!-- Host Key Verification -->
+    <string name="host_key_verification">主机密钥验证</string>
+    <string name="unknown_host_warning">无法确认主机 \'%1$s\' 的真实性。</string>
+    <string name="host_key_fingerprint">%1$s 密钥指纹:\n%2$s</string>
+    <string name="trust_host_question">确定要继续连接吗？</string>
+    <string name="host_key_changed_warning">警告：远程主机身份已更改！</string>
+    <string name="host_key_changed_detail">可能有人正在进行恶意操作！您的连接可能正在被中间人攻击窃听！</string>
+    <string name="old_fingerprint">旧指纹: %s</string>
+    <string name="new_fingerprint">新指纹: %s</string>
+    <string name="accept_new_key">接受新密钥</string>
+    <string name="trust_host">信任主机</string>
+    <string name="reject">拒绝</string>
 </resources>

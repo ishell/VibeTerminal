@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network Security Configuration
+    Security best practices for SSH terminal app
+-->
+<network-security-config>
+    <!-- Default configuration: disable cleartext (HTTP) traffic -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!--
+        Note: SSH connections use their own encryption (not HTTPS)
+        This config applies to any HTTP/HTTPS traffic the app might make
+    -->
+</network-security-config>

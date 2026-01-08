@@ -25,8 +25,11 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -52,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -59,6 +64,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.terminal.R
+import com.vibe.terminal.data.ssh.HostKeyStatus
 import com.vibe.terminal.domain.model.Machine
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -324,6 +330,13 @@ fun MachineEditScreen(
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
+                is TestConnectionStatus.HostKeyVerification -> {
+                    HostKeyVerificationDialog(
+                        status = testStatus.status,
+                        onAccept = { viewModel.acceptHostKeyAndContinue() },
+                        onReject = { viewModel.dismissTestResult() }
+                    )
+                }
                 is TestConnectionStatus.Failed -> {
                     var showDetails by remember { mutableStateOf(false) }
 
@@ -470,4 +483,115 @@ private fun PasswordField(
         },
         modifier = Modifier.fillMaxWidth()
     )
+}
+
+@Composable
+private fun HostKeyVerificationDialog(
+    status: HostKeyStatus,
+    onAccept: () -> Unit,
+    onReject: () -> Unit
+) {
+    when (status) {
+        is HostKeyStatus.Unknown -> {
+            AlertDialog(
+                onDismissRequest = onReject,
+                icon = {
+                    Icon(
+                        Icons.Default.Security,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                title = {
+                    Text(stringResource(R.string.host_key_verification))
+                },
+                text = {
+                    Column {
+                        Text(
+                            stringResource(R.string.unknown_host_warning, status.host),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.host_key_fingerprint, status.algorithm, status.fingerprint),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.trust_host_question),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = onAccept) {
+                        Text(stringResource(R.string.trust_host))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onReject) {
+                        Text(stringResource(R.string.reject))
+                    }
+                }
+            )
+        }
+        is HostKeyStatus.Changed -> {
+            AlertDialog(
+                onDismissRequest = onReject,
+                icon = {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = {
+                    Text(
+                        stringResource(R.string.host_key_changed_warning),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            stringResource(R.string.host_key_changed_detail),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            stringResource(R.string.old_fingerprint, status.oldFingerprint),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.new_fingerprint, status.newFingerprint),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = onAccept,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text(stringResource(R.string.accept_new_key))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onReject) {
+                        Text(stringResource(R.string.reject))
+                    }
+                }
+            )
+        }
+        is HostKeyStatus.Verified -> {
+            // Should not reach here
+        }
+    }
 }

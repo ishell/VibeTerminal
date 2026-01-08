@@ -122,4 +122,17 @@
     <string name="font_jetbrains_mono_desc">Popular coding font with Nerd Font icons</string>
     <string name="font_system_mono">System Monospace</string>
     <string name="font_system_mono_desc">Use system default monospace font</string>
+
+    <!-- Host Key Verification -->
+    <string name="host_key_verification">Host Key Verification</string>
+    <string name="unknown_host_warning">The authenticity of host \'%1$s\' can\'t be established.</string>
+    <string name="host_key_fingerprint">%1$s key fingerprint is:\n%2$s</string>
+    <string name="trust_host_question">Are you sure you want to continue connecting?</string>
+    <string name="host_key_changed_warning">WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!</string>
+    <string name="host_key_changed_detail">It is possible that someone is doing something nasty! Someone could be eavesdropping on you right now (man-in-the-middle attack)!</string>
+    <string name="old_fingerprint">Old fingerprint: %s</string>
+    <string name="new_fingerprint">New fingerprint: %s</string>
+    <string name="accept_new_key">Accept New Key</string>
+    <string name="trust_host">Trust Host</string>
+    <string name="reject">Reject</string>
 </resources>

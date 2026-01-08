@@ -3,6 +3,9 @@ package com.vibe.terminal.ui.settings
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.terminal.data.ssh.HostKeyManager
+import com.vibe.terminal.data.ssh.HostKeyStatus
+import com.vibe.terminal.data.ssh.SshConnectResult
 import com.vibe.terminal.data.ssh.SshErrorAnalyzer
 import com.vibe.terminal.data.ssh.SshErrorInfo
 import com.vibe.terminal.data.ssh.SshKeyLoader
@@ -18,14 +21,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
 class MachineEditViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val machineRepository: MachineRepository
+    private val machineRepository: MachineRepository,
+    private val hostKeyManager: HostKeyManager
 ) : ViewModel() {
 
     private val machineId: String? = savedStateHandle["machineId"]
@@ -131,34 +134,36 @@ class MachineEditViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(testStatus = TestConnectionStatus.Testing) }
 
-            val result = withContext(Dispatchers.IO) {
-                var client: SSHClient? = null
-                var keyResult: com.vibe.terminal.data.ssh.SshKeyLoadResult? = null
-                try {
-                    client = SSHClient(DefaultConfig()).apply {
-                        addHostKeyVerifier(PromiscuousVerifier())
-                        connect(state.host, state.port.toIntOrNull() ?: 22)
+            val port = state.port.toIntOrNull() ?: 22
 
-                        when (state.authType) {
-                            Machine.AuthType.PASSWORD -> {
-                                authPassword(state.username, state.password)
-                            }
-                            Machine.AuthType.SSH_KEY -> {
-                                keyResult = SshKeyLoader.loadKey(
-                                    state.privateKey,
-                                    state.passphrase.ifBlank { null }
-                                )
-                                authPublickey(state.username, keyResult!!.keyProvider)
-                            }
-                        }
+            // 第一步：验证主机密钥
+            val verifyResult = withContext(Dispatchers.IO) {
+                verifyHostKeyInternal(state.host, port)
+            }
+
+            when (verifyResult) {
+                is SshConnectResult.HostKeyVerificationRequired -> {
+                    // 需要用户确认主机密钥
+                    _uiState.update {
+                        it.copy(testStatus = TestConnectionStatus.HostKeyVerification(verifyResult.status))
                     }
-                    Result.success(Unit)
-                } catch (e: Exception) {
-                    Result.failure(e)
-                } finally {
-                    keyResult?.cleanup()
-                    try { client?.disconnect() } catch (_: Exception) { }
+                    return@launch
                 }
+                is SshConnectResult.Failed -> {
+                    val errorInfo = SshErrorAnalyzer.analyze(verifyResult.error)
+                    _uiState.update {
+                        it.copy(testStatus = TestConnectionStatus.Failed(errorInfo))
+                    }
+                    return@launch
+                }
+                is SshConnectResult.Success -> {
+                    // 继续认证测试
+                }
+            }
+
+            // 第二步：测试认证
+            val result = withContext(Dispatchers.IO) {
+                testAuthenticationInternal(state)
             }
 
             result.fold(
@@ -170,6 +175,124 @@ class MachineEditViewModel @Inject constructor(
                     _uiState.update { it.copy(testStatus = TestConnectionStatus.Failed(errorInfo)) }
                 }
             )
+        }
+    }
+
+    /**
+     * 用户接受主机密钥后继续测试
+     */
+    fun acceptHostKeyAndContinue() {
+        val state = _uiState.value
+        val hostKeyStatus = (state.testStatus as? TestConnectionStatus.HostKeyVerification)?.status
+            ?: return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(testStatus = TestConnectionStatus.Testing) }
+
+            val port = state.port.toIntOrNull() ?: 22
+
+            // 保存主机密钥
+            withContext(Dispatchers.IO) {
+                saveHostKeyInternal(state.host, port)
+            }
+
+            // 继续测试认证
+            val result = withContext(Dispatchers.IO) {
+                testAuthenticationInternal(state)
+            }
+
+            result.fold(
+                onSuccess = {
+                    _uiState.update { it.copy(testStatus = TestConnectionStatus.Success) }
+                },
+                onFailure = { error ->
+                    val errorInfo = SshErrorAnalyzer.analyze(error)
+                    _uiState.update { it.copy(testStatus = TestConnectionStatus.Failed(errorInfo)) }
+                }
+            )
+        }
+    }
+
+    private suspend fun verifyHostKeyInternal(host: String, port: Int): SshConnectResult {
+        var tempClient: SSHClient? = null
+        return try {
+            val collectingVerifier = hostKeyManager.createCollectingVerifier()
+
+            tempClient = SSHClient(DefaultConfig()).apply {
+                addHostKeyVerifier(collectingVerifier)
+                connect(host, port)
+            }
+
+            val publicKey = collectingVerifier.collectedKey
+                ?: return SshConnectResult.Failed(SecurityException("无法获取服务器公钥"))
+
+            val status = hostKeyManager.checkHostKey(host, port, publicKey)
+
+            when (status) {
+                is HostKeyStatus.Verified -> SshConnectResult.Success
+                is HostKeyStatus.Unknown,
+                is HostKeyStatus.Changed -> SshConnectResult.HostKeyVerificationRequired(status)
+            }
+        } catch (e: Exception) {
+            SshConnectResult.Failed(e)
+        } finally {
+            try {
+                tempClient?.disconnect()
+            } catch (_: Exception) { }
+        }
+    }
+
+    private suspend fun saveHostKeyInternal(host: String, port: Int) {
+        var tempClient: SSHClient? = null
+        try {
+            val collectingVerifier = hostKeyManager.createCollectingVerifier()
+
+            tempClient = SSHClient(DefaultConfig()).apply {
+                addHostKeyVerifier(collectingVerifier)
+                connect(host, port)
+            }
+
+            val publicKey = collectingVerifier.collectedKey
+            if (publicKey != null) {
+                hostKeyManager.saveHostKey(host, port, publicKey)
+            }
+        } finally {
+            try {
+                tempClient?.disconnect()
+            } catch (_: Exception) { }
+        }
+    }
+
+    private suspend fun testAuthenticationInternal(state: MachineEditUiState): Result<Unit> {
+        var client: SSHClient? = null
+        var keyResult: com.vibe.terminal.data.ssh.SshKeyLoadResult? = null
+        return try {
+            val collectingVerifier = hostKeyManager.createCollectingVerifier()
+
+            client = SSHClient(DefaultConfig()).apply {
+                // 使用收集验证器（主机已验证）
+                addHostKeyVerifier(collectingVerifier)
+                connect(state.host, state.port.toIntOrNull() ?: 22)
+
+                when (state.authType) {
+                    Machine.AuthType.PASSWORD -> {
+                        authPassword(state.username, state.password)
+                    }
+                    Machine.AuthType.SSH_KEY -> {
+                        keyResult = SshKeyLoader.loadKey(
+                            state.privateKey,
+                            state.passphrase.ifBlank { null }
+                        )
+                        authPublickey(state.username, keyResult!!.keyProvider)
+                    }
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            keyResult?.cleanup()
+            try { client?.disconnect() } catch (_: Exception) { }
         }
     }
 
@@ -207,4 +330,5 @@ sealed class TestConnectionStatus {
     data object Testing : TestConnectionStatus()
     data object Success : TestConnectionStatus()
     data class Failed(val errorInfo: SshErrorInfo) : TestConnectionStatus()
+    data class HostKeyVerification(val status: HostKeyStatus) : TestConnectionStatus()
 }

@@ -12,9 +12,10 @@ import kotlinx.coroutines.withContext
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.PublicKey
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,9 +28,12 @@ import javax.inject.Singleton
  * - 空闲超时自动断开（默认60秒）
  * - 线程安全
  * - 自动重连
+ * - 安全的主机密钥验证
  */
 @Singleton
-class SshConnectionPool @Inject constructor() {
+class SshConnectionPool @Inject constructor(
+    private val hostKeyManager: HostKeyManager
+) {
 
     companion object {
         private const val IDLE_TIMEOUT_MS = 60_000L  // 60秒空闲后断开
@@ -54,6 +58,9 @@ class SshConnectionPool @Inject constructor() {
 
     /**
      * 获取或创建连接
+     *
+     * @param config SSH配置（必须包含 trustedFingerprint）
+     * @return 连接结果
      */
     suspend fun getConnection(config: SshConfig): Result<PooledConnection> = mutex.withLock {
         val key = getConnectionKey(config)
@@ -72,8 +79,20 @@ class SshConnectionPool @Inject constructor() {
         // 创建新连接
         return withContext(Dispatchers.IO) {
             try {
+                // 验证必须有可信指纹
+                val fingerprint = config.trustedFingerprint
+                    ?: return@withContext Result.failure(
+                        SecurityException("连接池连接必须提供已验证的主机密钥指纹")
+                    )
+
                 val client = SSHClient(DefaultConfig()).apply {
-                    addHostKeyVerifier(PromiscuousVerifier())
+                    addHostKeyVerifier(
+                        hostKeyManager.createKnownHostsVerifier(
+                            config.host,
+                            config.port,
+                            fingerprint
+                        )
+                    )
                     connect(config.host, config.port)
 
                     when (val auth = config.authMethod) {
@@ -82,8 +101,11 @@ class SshConnectionPool @Inject constructor() {
                         }
                         is SshConfig.AuthMethod.PublicKey -> {
                             val keyResult = SshKeyLoader.loadKey(auth.privateKey, auth.passphrase)
-                            authPublickey(config.username, keyResult.keyProvider)
-                            // 注意：临时密钥文件会在 PooledConnection 关闭时清理
+                            try {
+                                authPublickey(config.username, keyResult.keyProvider)
+                            } finally {
+                                keyResult.cleanup()
+                            }
                         }
                     }
                 }
@@ -98,6 +120,69 @@ class SshConnectionPool @Inject constructor() {
             } catch (e: Exception) {
                 Result.failure(e)
             }
+        }
+    }
+
+    /**
+     * 验证主机密钥（用于首次连接）
+     *
+     * @return 主机密钥状态
+     */
+    suspend fun verifyHostKey(
+        host: String,
+        port: Int
+    ): SshConnectResult = withContext(Dispatchers.IO) {
+        var tempClient: SSHClient? = null
+        try {
+            val collectingVerifier = hostKeyManager.createCollectingVerifier()
+
+            tempClient = SSHClient(DefaultConfig()).apply {
+                addHostKeyVerifier(collectingVerifier)
+                connect(host, port)
+            }
+
+            val publicKey = collectingVerifier.collectedKey
+                ?: return@withContext SshConnectResult.Failed(
+                    SecurityException("无法获取服务器公钥")
+                )
+
+            val status = hostKeyManager.checkHostKey(host, port, publicKey)
+
+            when (status) {
+                is HostKeyStatus.Verified -> SshConnectResult.Success
+                is HostKeyStatus.Unknown,
+                is HostKeyStatus.Changed -> SshConnectResult.HostKeyVerificationRequired(status)
+            }
+        } catch (e: Exception) {
+            SshConnectResult.Failed(e)
+        } finally {
+            try {
+                tempClient?.disconnect()
+            } catch (_: Exception) { }
+        }
+    }
+
+    /**
+     * 接受并保存主机密钥
+     */
+    suspend fun acceptHostKey(host: String, port: Int) = withContext(Dispatchers.IO) {
+        var tempClient: SSHClient? = null
+        try {
+            val collectingVerifier = hostKeyManager.createCollectingVerifier()
+
+            tempClient = SSHClient(DefaultConfig()).apply {
+                addHostKeyVerifier(collectingVerifier)
+                connect(host, port)
+            }
+
+            val publicKey = collectingVerifier.collectedKey
+            if (publicKey != null) {
+                hostKeyManager.saveHostKey(host, port, publicKey)
+            }
+        } finally {
+            try {
+                tempClient?.disconnect()
+            } catch (_: Exception) { }
         }
     }
 

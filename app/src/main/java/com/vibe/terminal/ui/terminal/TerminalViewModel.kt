@@ -4,8 +4,11 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.terminal.data.preferences.UserPreferences
+import com.vibe.terminal.data.ssh.HostKeyManager
+import com.vibe.terminal.data.ssh.HostKeyStatus
 import com.vibe.terminal.data.ssh.SshClient
 import com.vibe.terminal.data.ssh.SshConfig
+import com.vibe.terminal.data.ssh.SshConnectResult
 import com.vibe.terminal.data.ssh.SshConnectionState
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
@@ -33,6 +36,7 @@ class TerminalViewModel @Inject constructor(
     private val projectRepository: ProjectRepository,
     private val machineRepository: MachineRepository,
     private val sshClient: SshClient,
+    private val hostKeyManager: HostKeyManager,
     private val userPreferences: UserPreferences
 ) : ViewModel() {
 
@@ -118,11 +122,53 @@ class TerminalViewModel @Inject constructor(
             }
         )
 
-        sshClient.connect(config).onSuccess {
-            startPtySession(project)
-            projectRepository.updateLastConnected(project.id)
-        }.onFailure { error ->
-            _uiState.update { it.copy(error = error.message) }
+        when (val result = sshClient.connect(config)) {
+            is SshConnectResult.Success -> {
+                startPtySession(project)
+                projectRepository.updateLastConnected(project.id)
+            }
+            is SshConnectResult.HostKeyVerificationRequired -> {
+                _uiState.update {
+                    it.copy(hostKeyStatus = result.status, pendingConfig = config)
+                }
+            }
+            is SshConnectResult.Failed -> {
+                _uiState.update { it.copy(error = result.error.message) }
+            }
+        }
+    }
+
+    /**
+     * Accept host key and continue connection
+     */
+    fun acceptHostKeyAndConnect() {
+        val state = _uiState.value
+        val hostKeyStatus = state.hostKeyStatus ?: return
+        val config = state.pendingConfig ?: return
+
+        viewModelScope.launch {
+            // Save the host key
+            sshClient.acceptHostKey(config.host, config.port, "")
+
+            // Clear host key dialog
+            _uiState.update { it.copy(hostKeyStatus = null, pendingConfig = null) }
+
+            // Retry connection (host key is now saved)
+            val project = state.project ?: return@launch
+            connect(state.machine!!, project)
+        }
+    }
+
+    /**
+     * Reject host key and cancel connection
+     */
+    fun rejectHostKey() {
+        _uiState.update {
+            it.copy(
+                hostKeyStatus = null,
+                pendingConfig = null,
+                error = "Connection cancelled: host key rejected"
+            )
         }
     }
 
@@ -384,5 +430,7 @@ class TerminalViewModel @Inject constructor(
 data class TerminalUiState(
     val project: Project? = null,
     val machine: Machine? = null,
-    val error: String? = null
+    val error: String? = null,
+    val hostKeyStatus: HostKeyStatus? = null,
+    val pendingConfig: SshConfig? = null
 )
