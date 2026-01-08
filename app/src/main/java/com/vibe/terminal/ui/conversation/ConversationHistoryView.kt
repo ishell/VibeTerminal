@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,20 +26,22 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +63,9 @@ import java.time.format.DateTimeFormatter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private const val INITIAL_VISIBLE_COUNT = 20
+private const val LOAD_MORE_COUNT = 50
 
 /**
  * 对话历史可展开视图
@@ -193,13 +200,19 @@ private fun SessionView(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var visibleCount by remember { mutableIntStateOf(INITIAL_VISIBLE_COUNT) }
+    val listState = rememberLazyListState()
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 会话标题
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = !expanded }
+                .clickable {
+                    expanded = !expanded
+                    // 重置可见数量
+                    if (!expanded) visibleCount = INITIAL_VISIBLE_COUNT
+                }
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -224,24 +237,56 @@ private fun SessionView(
             }
         }
 
-        // 展开的段落列表
+        // 展开的段落列表 - 使用 LazyColumn 虚拟化
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(),
             exit = shrinkVertically()
         ) {
+            val totalCount = session.segments.size
+            val displayedSegments = session.segments.take(visibleCount)
+            val hasMore = visibleCount < totalCount
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 24.dp, end = 8.dp, bottom = 8.dp)
             ) {
-                session.segments.forEachIndexed { index, segment ->
-                    SegmentItem(
-                        segment = segment,
-                        index = index + 1
-                    )
-                    if (index < session.segments.size - 1) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                // 使用 LazyColumn 实现虚拟化滚动
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp),  // 限制最大高度
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    itemsIndexed(
+                        items = displayedSegments,
+                        key = { _, segment -> segment.id }
+                    ) { index, segment ->
+                        SegmentItem(
+                            segment = segment,
+                            index = index + 1
+                        )
+                    }
+                }
+
+                // 加载更多按钮
+                if (hasMore) {
+                    TextButton(
+                        onClick = { visibleCount += LOAD_MORE_COUNT },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Load more (${totalCount - visibleCount} remaining)",
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
             }
