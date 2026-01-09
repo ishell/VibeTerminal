@@ -252,7 +252,8 @@ fun ProjectDetailScreen(
                         }
 
                         // 根据模式生成主题列表
-                        val topics = remember(uiState.sessions, viewMode) {
+                        // 使用 sessions.size 作为额外的 key 确保列表更新时重新计算
+                        val topics = remember(uiState.sessions, uiState.sessions.size, viewMode) {
                             when (viewMode) {
                                 TopicViewMode.BY_TIME -> ConversationParser.groupByTimeGap(uiState.sessions)
                                 TopicViewMode.BY_SESSION -> ConversationParser.groupBySessionBreaks(uiState.sessions)

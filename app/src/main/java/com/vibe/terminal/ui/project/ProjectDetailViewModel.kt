@@ -99,7 +99,7 @@ class ProjectDetailViewModel @Inject constructor(
 
                     val filesToLoad = files.take(10)
                     val total = filesToLoad.size
-                    val sessions = mutableListOf<ConversationSession>()
+                    val loadedSessions = mutableListOf<ConversationSession>()
 
                     // 边加载边显示
                     filesToLoad.forEachIndexed { index, fileInfo ->
@@ -120,11 +120,13 @@ class ProjectDetailViewModel @Inject constructor(
                             projectId = project.id
                         )
                         sessionResult.onSuccess { session ->
-                            sessions.add(session)
+                            loadedSessions.add(session)
                             // 每加载完一个就更新 UI（边加载边显示）
+                            // 创建新的列表实例确保 Compose 能检测到变化
+                            val sortedSessions = loadedSessions.toList().sortedByDescending { s -> s.startTime }
                             _uiState.update {
                                 it.copy(
-                                    sessions = sessions.sortedByDescending { s -> s.startTime },
+                                    sessions = sortedSessions,
                                     lastUpdated = System.currentTimeMillis()
                                 )
                             }
