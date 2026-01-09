@@ -147,6 +147,15 @@ fun ProjectDetailScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
 
+            // 终端预览
+            if (uiState.sessions.isNotEmpty()) {
+                com.vibe.terminal.ui.conversation.TerminalPreview(
+                    sessions = uiState.sessions,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    maxLines = 6
+                )
+            }
+
             HorizontalDivider()
 
             // 视图切换
