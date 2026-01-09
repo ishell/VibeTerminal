@@ -27,6 +27,7 @@ data class ConversationFileEntity(
     val filePath: String,
     val fileSize: Long,
     val lastModified: Long,            // 文件最后修改时间
+    val lastOffset: Long = 0L,         // 已读取的字节偏移量（用于增量同步）
     val cachedAt: Long = System.currentTimeMillis()
 )
 

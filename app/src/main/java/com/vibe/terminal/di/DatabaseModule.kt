@@ -21,6 +21,13 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    private val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 添加 lastOffset 字段用于增量同步
+            db.execSQL("ALTER TABLE conversation_files ADD COLUMN lastOffset INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
     private val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 创建对话文件缓存表
@@ -92,7 +99,7 @@ object DatabaseModule {
             "vibe_terminal.db"
         )
         .openHelperFactory(SupportOpenHelperFactory(passphrase))
-        .addMigrations(MIGRATION_1_2)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
         .fallbackToDestructiveMigration()
         .build()
     }

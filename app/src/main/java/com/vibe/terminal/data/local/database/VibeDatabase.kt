@@ -19,7 +19,7 @@ import com.vibe.terminal.data.local.entity.ProjectEntity
         ConversationSessionEntity::class,
         ConversationSegmentEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class VibeDatabase : RoomDatabase() {

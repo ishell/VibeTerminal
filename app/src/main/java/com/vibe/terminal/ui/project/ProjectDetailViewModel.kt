@@ -74,7 +74,7 @@ class ProjectDetailViewModel @Inject constructor(
 
     private fun loadConversationHistoryInternal(project: Project, machine: Machine) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = true, error = null, loadingProgress = null) }
 
             val sshConfig = createSshConfig(machine)
 
@@ -90,14 +90,30 @@ class ProjectDetailViewModel @Inject constructor(
                             it.copy(
                                 isLoading = false,
                                 sessions = emptyList(),
-                                lastUpdated = System.currentTimeMillis()
+                                lastUpdated = System.currentTimeMillis(),
+                                loadingProgress = null
                             )
                         }
                         return@fold
                     }
 
+                    val filesToLoad = files.take(10)
+                    val total = filesToLoad.size
                     val sessions = mutableListOf<ConversationSession>()
-                    for (fileInfo in files.take(10)) {
+
+                    // 边加载边显示
+                    filesToLoad.forEachIndexed { index, fileInfo ->
+                        // 更新进度
+                        _uiState.update {
+                            it.copy(
+                                loadingProgress = LoadingProgress(
+                                    current = index + 1,
+                                    total = total,
+                                    currentFileName = fileInfo.sessionId
+                                )
+                            )
+                        }
+
                         val sessionResult = conversationFetcher.fetchAndParseConversation(
                             config = sshConfig,
                             fileInfo = fileInfo,
@@ -105,14 +121,20 @@ class ProjectDetailViewModel @Inject constructor(
                         )
                         sessionResult.onSuccess { session ->
                             sessions.add(session)
+                            // 每加载完一个就更新 UI（边加载边显示）
+                            _uiState.update {
+                                it.copy(
+                                    sessions = sessions.sortedByDescending { s -> s.startTime },
+                                    lastUpdated = System.currentTimeMillis()
+                                )
+                            }
                         }
                     }
 
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            sessions = sessions.sortedByDescending { s -> s.startTime },
-                            lastUpdated = System.currentTimeMillis()
+                            loadingProgress = null
                         )
                     }
 
@@ -123,7 +145,8 @@ class ProjectDetailViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = error.message ?: "Failed to load conversation history"
+                            error = error.message ?: "Failed to load conversation history",
+                            loadingProgress = null
                         )
                     }
                 }
@@ -214,5 +237,16 @@ data class ProjectDetailUiState(
     val isRefreshing: Boolean = false,
     val sessions: List<ConversationSession> = emptyList(),
     val error: String? = null,
-    val lastUpdated: Long = 0L
+    val lastUpdated: Long = 0L,
+    // 加载进度
+    val loadingProgress: LoadingProgress? = null
+)
+
+/**
+ * 加载进度信息
+ */
+data class LoadingProgress(
+    val current: Int,      // 当前正在加载第几个
+    val total: Int,        // 总共多少个文件
+    val currentFileName: String = ""  // 当前正在加载的文件名
 )

@@ -98,4 +98,40 @@ interface ConversationDao {
         fileSize: Long,
         lastModified: Long
     ): ConversationFileEntity?
+
+    // ========== 增量同步相关 ==========
+
+    /**
+     * 获取文件的上次读取偏移量
+     */
+    @Query("SELECT lastOffset FROM conversation_files WHERE id = :sessionId")
+    suspend fun getLastOffset(sessionId: String): Long?
+
+    /**
+     * 更新文件的读取偏移量
+     */
+    @Query("UPDATE conversation_files SET lastOffset = :offset, fileSize = :fileSize, lastModified = :lastModified WHERE id = :sessionId")
+    suspend fun updateOffset(sessionId: String, offset: Long, fileSize: Long, lastModified: Long)
+
+    /**
+     * 检查文件是否有更新（基于文件大小）
+     * 返回需要增量读取的起始偏移量，如果不需要更新返回 null
+     */
+    @Query("""
+        SELECT lastOffset FROM conversation_files
+        WHERE id = :sessionId
+        AND projectId = :projectId
+        AND fileSize < :newFileSize
+    """)
+    suspend fun getOffsetIfNeedsUpdate(
+        projectId: String,
+        sessionId: String,
+        newFileSize: Long
+    ): Long?
+
+    /**
+     * 检查文件是否已缓存（任意版本）
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM conversation_files WHERE id = :sessionId AND projectId = :projectId)")
+    suspend fun hasCache(projectId: String, sessionId: String): Boolean
 }

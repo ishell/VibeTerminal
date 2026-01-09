@@ -83,7 +83,8 @@ class ConversationDbCache @Inject constructor(
             projectId = projectId,
             filePath = filePath,
             fileSize = fileSize,
-            lastModified = lastModified
+            lastModified = lastModified,
+            lastOffset = fileSize  // 设置偏移量为当前文件大小
         )
 
         val sessionEntity = ConversationSessionEntity(

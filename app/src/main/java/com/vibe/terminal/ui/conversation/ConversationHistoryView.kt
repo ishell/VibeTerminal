@@ -68,6 +68,15 @@ private const val INITIAL_VISIBLE_COUNT = 20
 private const val LOAD_MORE_COUNT = 50
 
 /**
+ * 加载进度信息
+ */
+data class LoadingProgress(
+    val current: Int,
+    val total: Int,
+    val currentFileName: String = ""
+)
+
+/**
  * 对话历史可展开视图
  */
 @Composable
@@ -78,7 +87,8 @@ fun ConversationHistoryView(
     error: String?,
     lastUpdated: Long,
     onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    loadingProgress: LoadingProgress? = null
 ) {
     Column(modifier = modifier) {
         // 头部：更新时间和刷新按钮
@@ -146,24 +156,47 @@ fun ConversationHistoryView(
         HorizontalDivider()
 
         when {
-            isLoading -> {
-                Row(
+            isLoading && sessions.isEmpty() -> {
+                // 初始加载状态（显示进度）
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Loading conversation history...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        if (loadingProgress != null) {
+                            Text(
+                                text = "Loading ${loadingProgress.current}/${loadingProgress.total}...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "Loading conversation history...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    if (loadingProgress != null && loadingProgress.currentFileName.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = loadingProgress.currentFileName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
             error != null -> {
@@ -183,6 +216,29 @@ fun ConversationHistoryView(
                 )
             }
             else -> {
+                // 如果正在加载更多，显示进度条
+                if (isLoading && loadingProgress != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Loading ${loadingProgress.current}/${loadingProgress.total}...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
                 sessions.forEach { session ->
                     SessionView(session = session)
                 }

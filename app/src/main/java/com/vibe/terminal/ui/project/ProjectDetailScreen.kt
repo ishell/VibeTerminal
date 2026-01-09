@@ -157,8 +157,9 @@ fun ProjectDetailScreen(
             )
 
             // 内容区域
+            val loadingProgress = uiState.loadingProgress
             when {
-                uiState.isLoading -> {
+                uiState.isLoading && uiState.sessions.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -166,11 +167,29 @@ fun ProjectDetailScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Loading conversation history...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (loadingProgress != null) {
+                                Text(
+                                    text = "Loading ${loadingProgress.current}/${loadingProgress.total}...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (loadingProgress.currentFileName.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = loadingProgress.currentFileName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = "Loading conversation history...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -207,19 +226,45 @@ fun ProjectDetailScreen(
                     }
                 }
                 else -> {
-                    // 根据模式生成主题列表
-                    val topics = remember(uiState.sessions, viewMode) {
-                        when (viewMode) {
-                            TopicViewMode.BY_TIME -> ConversationParser.groupByTimeGap(uiState.sessions)
-                            TopicViewMode.BY_SESSION -> ConversationParser.groupBySessionBreaks(uiState.sessions)
+                    Column {
+                        // 如果正在加载更多，显示进度条
+                        if (uiState.isLoading && loadingProgress != null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Loading ${loadingProgress.current}/${loadingProgress.total}...",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
                         }
-                    }
 
-                    TopicListView(
-                        topics = topics,
-                        viewMode = viewMode,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                        // 根据模式生成主题列表
+                        val topics = remember(uiState.sessions, viewMode) {
+                            when (viewMode) {
+                                TopicViewMode.BY_TIME -> ConversationParser.groupByTimeGap(uiState.sessions)
+                                TopicViewMode.BY_SESSION -> ConversationParser.groupBySessionBreaks(uiState.sessions)
+                            }
+                        }
+
+                        TopicListView(
+                            topics = topics,
+                            viewMode = viewMode,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
