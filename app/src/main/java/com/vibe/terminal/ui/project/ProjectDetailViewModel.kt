@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.terminal.data.conversation.ConversationFetcher
+import com.vibe.terminal.data.ssh.HostKeyManager
 import com.vibe.terminal.data.ssh.SshConfig
 import com.vibe.terminal.domain.model.ConversationSession
 import com.vibe.terminal.domain.model.Machine
@@ -26,7 +27,8 @@ class ProjectDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val projectRepository: ProjectRepository,
     private val machineRepository: MachineRepository,
-    private val conversationFetcher: ConversationFetcher
+    private val conversationFetcher: ConversationFetcher,
+    private val hostKeyManager: HostKeyManager
 ) : ViewModel() {
 
     private val projectId: String = savedStateHandle["projectId"] ?: ""
@@ -182,7 +184,8 @@ class ProjectDetailViewModel @Inject constructor(
         }
     }
 
-    private fun createSshConfig(machine: Machine): SshConfig {
+    private suspend fun createSshConfig(machine: Machine): SshConfig {
+        val fingerprint = hostKeyManager.getStoredFingerprint(machine.host, machine.port)
         return SshConfig(
             host = machine.host,
             port = machine.port,
@@ -193,7 +196,8 @@ class ProjectDetailViewModel @Inject constructor(
                     privateKey = machine.privateKey ?: "",
                     passphrase = machine.passphrase
                 )
-            }
+            },
+            trustedFingerprint = fingerprint
         )
     }
 

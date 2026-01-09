@@ -109,6 +109,7 @@ class TerminalViewModel @Inject constructor(
     }
 
     private suspend fun connect(machine: Machine, project: Project) {
+        val fingerprint = hostKeyManager.getStoredFingerprint(machine.host, machine.port)
         val config = SshConfig(
             host = machine.host,
             port = machine.port,
@@ -119,7 +120,8 @@ class TerminalViewModel @Inject constructor(
                     machine.privateKey ?: "",
                     machine.passphrase
                 )
-            }
+            },
+            trustedFingerprint = fingerprint
         )
 
         when (val result = sshClient.connect(config)) {
@@ -386,18 +388,23 @@ class TerminalViewModel @Inject constructor(
 
     /**
      * Send zellij keybinding sequence
-     * First sends Ctrl+P to enter pane mode, then the action key
+     * First sends Ctrl+P to enter pane mode, then the action key, then Escape to exit pane mode
      */
     private fun sendZellijKeybinding(actionKey: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Ctrl+P = \x10 (ASCII 16) to enter pane mode
                 // Then send the action key
+                // Then send Escape to exit pane mode
                 outputStream?.write("\u0010".toByteArray())  // Ctrl+P
                 outputStream?.flush()
                 // Small delay to ensure pane mode is activated
                 kotlinx.coroutines.delay(50)
-                outputStream?.write(actionKey.toByteArray())  // Action key (f, n, p)
+                outputStream?.write(actionKey.toByteArray())  // Action key (h, l, j, k, f, w, etc.)
+                outputStream?.flush()
+                // Small delay then exit pane mode
+                kotlinx.coroutines.delay(50)
+                outputStream?.write("\u001b".toByteArray())  // Escape to exit pane mode
                 outputStream?.flush()
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message) }

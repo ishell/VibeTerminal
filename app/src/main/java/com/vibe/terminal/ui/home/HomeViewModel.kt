@@ -3,6 +3,7 @@ package com.vibe.terminal.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.terminal.data.conversation.ConversationFetcher
+import com.vibe.terminal.data.ssh.HostKeyManager
 import com.vibe.terminal.data.ssh.SshConfig
 import com.vibe.terminal.data.ssh.SshConnectionPool
 import com.vibe.terminal.domain.model.ConversationSession
@@ -31,7 +32,8 @@ class HomeViewModel @Inject constructor(
     private val projectRepository: ProjectRepository,
     private val machineRepository: MachineRepository,
     private val conversationFetcher: ConversationFetcher,
-    private val sshConnectionPool: SshConnectionPool
+    private val sshConnectionPool: SshConnectionPool,
+    private val hostKeyManager: HostKeyManager
 ) : ViewModel() {
 
     private val _projects = projectRepository.getAllProjects()
@@ -76,6 +78,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _dialogState.update { it.copy(isLoadingSessions = true, sessionError = null) }
 
+            val fingerprint = hostKeyManager.getStoredFingerprint(machine.host, machine.port)
             val sshConfig = SshConfig(
                 host = machine.host,
                 port = machine.port,
@@ -86,7 +89,8 @@ class HomeViewModel @Inject constructor(
                         privateKey = machine.privateKey ?: "",
                         passphrase = machine.passphrase
                     )
-                }
+                },
+                trustedFingerprint = fingerprint
             )
 
             val result = withContext(Dispatchers.IO) {
@@ -192,6 +196,7 @@ class HomeViewModel @Inject constructor(
                 ) ?: ConversationHistoryState(isLoading = true)))
             }
 
+            val fingerprint = hostKeyManager.getStoredFingerprint(machine.host, machine.port)
             val sshConfig = SshConfig(
                 host = machine.host,
                 port = machine.port,
@@ -202,7 +207,8 @@ class HomeViewModel @Inject constructor(
                         privateKey = machine.privateKey ?: "",
                         passphrase = machine.passphrase
                     )
-                }
+                },
+                trustedFingerprint = fingerprint
             )
 
             // 获取对话文件列表

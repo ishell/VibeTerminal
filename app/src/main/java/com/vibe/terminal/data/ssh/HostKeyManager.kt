@@ -147,6 +147,20 @@ class HostKeyManager @Inject constructor(
     }
 
     /**
+     * 获取已存储的主机密钥指纹
+     *
+     * @return 指纹字符串，如果不存在则返回 null
+     */
+    suspend fun getStoredFingerprint(host: String, port: Int): String? = withContext(Dispatchers.IO) {
+        loadKnownHosts()
+
+        val hostKey = getHostKey(host, port)
+        synchronized(knownHosts) {
+            knownHosts[hostKey]?.fingerprint
+        }
+    }
+
+    /**
      * 删除主机密钥
      */
     suspend fun removeHostKey(host: String, port: Int) = withContext(Dispatchers.IO) {
