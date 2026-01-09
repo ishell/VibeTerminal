@@ -1,9 +1,11 @@
 package com.vibe.terminal.data.conversation
 
 import android.util.Base64
+import android.util.Log
 import com.vibe.terminal.data.ssh.SshConfig
 import com.vibe.terminal.data.ssh.SshConnectionPool
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
@@ -22,8 +24,19 @@ class ConversationFetcher @Inject constructor(
 ) {
 
     companion object {
+        private const val TAG = "ConversationFetcher"
+
         // 压缩传输的最小文件大小阈值（小于此值不压缩）
         private const val COMPRESSION_THRESHOLD = 1024L // 1KB
+
+        // 超时配置
+        private const val BASE_TIMEOUT_SECONDS = 30L      // 基础超时
+        private const val TIMEOUT_PER_MB_SECONDS = 10L    // 每 MB 额外增加的超时时间
+        private const val MAX_TIMEOUT_SECONDS = 300L      // 最大超时 5 分钟
+
+        // 重试配置
+        private const val MAX_RETRIES = 2
+        private const val RETRY_DELAY_MS = 1000L
     }
 
     /**
@@ -75,6 +88,8 @@ class ConversationFetcher @Inject constructor(
      * 1. 智能刷新：先检查文件大小是否变化
      * 2. 增量同步：只下载新增的内容
      * 3. 压缩传输：对传输内容进行 gzip 压缩
+     * 4. 动态超时：根据文件大小调整超时时间
+     * 5. 自动重试：网络失败时自动重试
      */
     suspend fun fetchAndParseConversation(
         config: SshConfig,
@@ -94,13 +109,14 @@ class ConversationFetcher @Inject constructor(
                 if (hasValidDbCache) {
                     val cached = dbCache.loadFromCache(fileInfo.sessionId)
                     if (cached != null) {
+                        Log.d(TAG, "Using cached session: ${fileInfo.sessionId}")
                         return@withContext Result.success(cached)
                     }
                 }
             }
 
-            // 2. 尝试增量同步
-            val jsonlContent = fetchContentWithIncrementalSync(config, fileInfo)
+            // 2. 尝试增量同步（带重试）
+            val jsonlContent = fetchContentWithRetry(config, fileInfo)
 
             // 3. 解析
             val session = ConversationParser.parseJsonl(
@@ -122,8 +138,34 @@ class ConversationFetcher @Inject constructor(
 
             Result.success(session)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch session ${fileInfo.sessionId}: ${e.message}")
             Result.failure(e)
         }
+    }
+
+    /**
+     * 带重试的内容获取
+     */
+    private suspend fun fetchContentWithRetry(
+        config: SshConfig,
+        fileInfo: ConversationFileInfo
+    ): String {
+        var lastException: Exception? = null
+
+        repeat(MAX_RETRIES + 1) { attempt ->
+            try {
+                if (attempt > 0) {
+                    Log.d(TAG, "Retry attempt $attempt for ${fileInfo.sessionId}")
+                    delay(RETRY_DELAY_MS * attempt)
+                }
+                return fetchContentWithIncrementalSync(config, fileInfo)
+            } catch (e: Exception) {
+                lastException = e
+                Log.w(TAG, "Attempt ${attempt + 1} failed for ${fileInfo.sessionId}: ${e.message}")
+            }
+        }
+
+        throw lastException ?: Exception("Failed to fetch content after retries")
     }
 
     /**
@@ -158,6 +200,15 @@ class ConversationFetcher @Inject constructor(
     }
 
     /**
+     * 根据文件大小计算超时时间
+     */
+    private fun calculateTimeout(fileSize: Long): Long {
+        val fileSizeMB = fileSize / (1024 * 1024)
+        val timeout = BASE_TIMEOUT_SECONDS + (fileSizeMB * TIMEOUT_PER_MB_SECONDS)
+        return timeout.coerceAtMost(MAX_TIMEOUT_SECONDS)
+    }
+
+    /**
      * 增量下载内容
      */
     private suspend fun fetchIncrementalContent(
@@ -166,12 +217,15 @@ class ConversationFetcher @Inject constructor(
         offset: Long
     ): String {
         val incrementalSize = fileInfo.fileSize - offset
+        val timeout = calculateTimeout(incrementalSize)
+
+        Log.d(TAG, "Fetching incremental: ${fileInfo.sessionId}, offset=$offset, size=$incrementalSize, timeout=${timeout}s")
 
         // 获取增量内容（带压缩）
         val incrementalContent = if (incrementalSize > COMPRESSION_THRESHOLD) {
-            fetchCompressedIncremental(config, fileInfo.filePath, offset)
+            fetchCompressedIncremental(config, fileInfo.filePath, offset, timeout)
         } else {
-            fetchRawIncremental(config, fileInfo.filePath, offset)
+            fetchRawIncremental(config, fileInfo.filePath, offset, timeout)
         }
 
         // 追加到本地缓存
@@ -194,11 +248,15 @@ class ConversationFetcher @Inject constructor(
         config: SshConfig,
         fileInfo: ConversationFileInfo
     ): String {
+        val timeout = calculateTimeout(fileInfo.fileSize)
+
+        Log.d(TAG, "Fetching full: ${fileInfo.sessionId}, size=${fileInfo.fileSize}, timeout=${timeout}s")
+
         // 根据文件大小决定是否压缩
         val content = if (fileInfo.fileSize > COMPRESSION_THRESHOLD) {
-            fetchCompressedFull(config, fileInfo.filePath)
+            fetchCompressedFull(config, fileInfo.filePath, timeout)
         } else {
-            fetchRawFull(config, fileInfo.filePath)
+            fetchRawFull(config, fileInfo.filePath, timeout)
         }
 
         // 保存到缓存
@@ -218,11 +276,12 @@ class ConversationFetcher @Inject constructor(
     private suspend fun fetchCompressedIncremental(
         config: SshConfig,
         filePath: String,
-        offset: Long
+        offset: Long,
+        timeoutSeconds: Long
     ): String {
         // tail -c +N 从第 N 个字节开始读取（1-indexed）
         val command = "tail -c +${offset + 1} '$filePath' | gzip -c | base64 -w 0"
-        val base64Compressed = connectionPool.executeCommand(config, command).getOrThrow()
+        val base64Compressed = connectionPool.executeCommand(config, command, timeoutSeconds).getOrThrow()
         return decompressBase64Gzip(base64Compressed)
     }
 
@@ -232,10 +291,11 @@ class ConversationFetcher @Inject constructor(
     private suspend fun fetchRawIncremental(
         config: SshConfig,
         filePath: String,
-        offset: Long
+        offset: Long,
+        timeoutSeconds: Long
     ): String {
         val command = "tail -c +${offset + 1} '$filePath'"
-        return connectionPool.executeCommand(config, command).getOrThrow()
+        return connectionPool.executeCommand(config, command, timeoutSeconds).getOrThrow()
     }
 
     /**
@@ -243,10 +303,11 @@ class ConversationFetcher @Inject constructor(
      */
     private suspend fun fetchCompressedFull(
         config: SshConfig,
-        filePath: String
+        filePath: String,
+        timeoutSeconds: Long
     ): String {
         val command = "gzip -c '$filePath' | base64 -w 0"
-        val base64Compressed = connectionPool.executeCommand(config, command).getOrThrow()
+        val base64Compressed = connectionPool.executeCommand(config, command, timeoutSeconds).getOrThrow()
         return decompressBase64Gzip(base64Compressed)
     }
 
@@ -255,9 +316,10 @@ class ConversationFetcher @Inject constructor(
      */
     private suspend fun fetchRawFull(
         config: SshConfig,
-        filePath: String
+        filePath: String,
+        timeoutSeconds: Long
     ): String {
-        return connectionPool.executeCommand(config, "cat '$filePath'").getOrThrow()
+        return connectionPool.executeCommand(config, "cat '$filePath'", timeoutSeconds).getOrThrow()
     }
 
     /**
@@ -278,7 +340,7 @@ class ConversationFetcher @Inject constructor(
         fileInfo: ConversationFileInfo
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val content = fetchContentWithIncrementalSync(config, fileInfo)
+            val content = fetchContentWithRetry(config, fileInfo)
             Result.success(content)
         } catch (e: Exception) {
             Result.failure(e)

@@ -243,9 +243,13 @@ fun ProjectDetailScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Loading ${loadingProgress.current}/${loadingProgress.total}...",
+                                        text = "Loading ${loadingProgress.current}/${loadingProgress.total}..." +
+                                                if (loadingProgress.failedCount > 0) " (${loadingProgress.failedCount} failed)" else "",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        color = if (loadingProgress.failedCount > 0)
+                                            MaterialTheme.colorScheme.error
+                                        else
+                                            MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
                             }

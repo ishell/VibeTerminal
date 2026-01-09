@@ -100,6 +100,7 @@ class ProjectDetailViewModel @Inject constructor(
                     val filesToLoad = files.take(10)
                     val total = filesToLoad.size
                     val loadedSessions = mutableListOf<ConversationSession>()
+                    var failedCount = 0
 
                     // 边加载边显示
                     filesToLoad.forEachIndexed { index, fileInfo ->
@@ -109,7 +110,8 @@ class ProjectDetailViewModel @Inject constructor(
                                 loadingProgress = LoadingProgress(
                                     current = index + 1,
                                     total = total,
-                                    currentFileName = fileInfo.sessionId
+                                    currentFileName = fileInfo.sessionId,
+                                    failedCount = failedCount
                                 )
                             )
                         }
@@ -119,18 +121,29 @@ class ProjectDetailViewModel @Inject constructor(
                             fileInfo = fileInfo,
                             projectId = project.id
                         )
-                        sessionResult.onSuccess { session ->
-                            loadedSessions.add(session)
-                            // 每加载完一个就更新 UI（边加载边显示）
-                            // 创建新的列表实例确保 Compose 能检测到变化
-                            val sortedSessions = loadedSessions.toList().sortedByDescending { s -> s.startTime }
-                            _uiState.update {
-                                it.copy(
-                                    sessions = sortedSessions,
-                                    lastUpdated = System.currentTimeMillis()
-                                )
+                        sessionResult.fold(
+                            onSuccess = { session ->
+                                loadedSessions.add(session)
+                                // 每加载完一个就更新 UI（边加载边显示）
+                                // 创建新的列表实例确保 Compose 能检测到变化
+                                val sortedSessions = loadedSessions.toList().sortedByDescending { s -> s.startTime }
+                                _uiState.update {
+                                    it.copy(
+                                        sessions = sortedSessions,
+                                        lastUpdated = System.currentTimeMillis()
+                                    )
+                                }
+                            },
+                            onFailure = {
+                                failedCount++
+                                // 更新失败计数
+                                _uiState.update {
+                                    it.copy(
+                                        loadingProgress = it.loadingProgress?.copy(failedCount = failedCount)
+                                    )
+                                }
                             }
-                        }
+                        )
                     }
 
                     _uiState.update {
@@ -248,7 +261,8 @@ data class ProjectDetailUiState(
  * 加载进度信息
  */
 data class LoadingProgress(
-    val current: Int,      // 当前正在加载第几个
-    val total: Int,        // 总共多少个文件
-    val currentFileName: String = ""  // 当前正在加载的文件名
+    val current: Int,           // 当前正在加载第几个
+    val total: Int,             // 总共多少个文件
+    val currentFileName: String = "",  // 当前正在加载的文件名
+    val failedCount: Int = 0    // 失败的文件数量
 )
