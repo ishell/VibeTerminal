@@ -63,6 +63,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -71,6 +72,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -109,6 +111,7 @@ fun TerminalScreen(
 
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     var inputText by remember { mutableStateOf("") }
     var isLandscapeMode by rememberSaveable { mutableStateOf(false) }
 
@@ -171,8 +174,21 @@ fun TerminalScreen(
         }
     }
 
-    // In landscape mode, let the system keyboard (e.g., Gboard) handle floating mode
-    // User should enable floating keyboard in Gboard settings for best experience
+    // Hide keyboard when entering landscape mode
+    // Clear focus first, then hide keyboard with a delay to ensure it works
+    LaunchedEffect(isLandscapeMode) {
+        if (isLandscapeMode) {
+            // Clear focus to prevent keyboard from showing
+            focusManager.clearFocus()
+            // Small delay to ensure orientation change is processed
+            kotlinx.coroutines.delay(100)
+            // Hide keyboard
+            keyboardController?.hide()
+            // Additional delay and hide again to be sure
+            kotlinx.coroutines.delay(200)
+            keyboardController?.hide()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -290,7 +306,10 @@ fun TerminalScreen(
                                         .fillMaxHeight(),
                                     onTap = {
                                         focusRequester.requestFocus()
-                                        keyboardController?.show()
+                                        // Only show keyboard in portrait mode
+                                        if (!isLandscapeMode) {
+                                            keyboardController?.show()
+                                        }
                                     },
                                     onDoubleTap = {
                                         // Double tap to toggle fullscreen panel
