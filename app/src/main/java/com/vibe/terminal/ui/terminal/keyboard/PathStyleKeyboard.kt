@@ -3,12 +3,14 @@ package com.vibe.terminal.ui.terminal.keyboard
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -28,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -38,25 +39,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-// Edge padding from screen border
+// Layout constants
 private val EDGE_PADDING = 16.dp
-// Bottom offset to avoid overlapping with horizontal keyboard
 private val BOTTOM_OFFSET = 120.dp
-// FAB size (smaller than before)
-private val FAB_SIZE = 44.dp
-// Shortcut button size
-private val BUTTON_SIZE = 38.dp
-// Overall transparency
-private const val BASE_ALPHA = 0.7f
+private val FAB_SIZE = 48.dp
+private val ARROW_BUTTON_SIZE = 36.dp
+private val FUNCTION_BUTTON_SIZE = 40.dp
+private val INNER_RADIUS = 50.dp  // Arrow keys radius
+private val OUTER_RADIUS = 95.dp  // Function keys radius
+private const val BASE_ALPHA = 0.75f
+
+// Colors
+private val FAB_COLOR = Color(0xFF2196F3)
+private val FAB_EXPANDED_COLOR = Color(0xFFE53935)
+private val ARROW_COLOR = Color(0xFF455A64)
+private val FUNCTION_COLOR = Color(0xFF37474F)
+private val CTRL_COLOR = Color(0xFF795548)
+private val CTRL_ACTIVE_COLOR = Color(0xFF4CAF50)
 
 /**
  * Path-style floating action keyboard
- * Shows a draggable FAB that expands into a radial menu of shortcuts
- * Snaps to left or right side of screen
+ *
+ * Design principles:
+ * - Two-ring layout: inner ring for arrows, outer ring for function keys
+ * - Fixed angular positions to prevent overlap
+ * - Visual grouping of related functions
+ * - Most common terminal keys: Esc, Tab, Arrows, Ctrl+C/D/Z
  */
 @Composable
 fun PathStyleKeyboard(
@@ -73,6 +86,8 @@ fun PathStyleKeyboard(
     val edgePaddingPx = with(density) { EDGE_PADDING.toPx() }
     val bottomOffsetPx = with(density) { BOTTOM_OFFSET.toPx() }
     val fabSizePx = with(density) { FAB_SIZE.toPx() }
+    val innerRadiusPx = with(density) { INNER_RADIUS.toPx() }
+    val outerRadiusPx = with(density) { OUTER_RADIUS.toPx() }
 
     // Track which side (left = true, right = false)
     var isOnLeftSide by remember { mutableStateOf(true) }
@@ -94,13 +109,7 @@ fun PathStyleKeyboard(
     // Expanded state
     var isExpanded by remember { mutableStateOf(false) }
 
-    // Ctrl mode (for Ctrl+key combinations)
-    var ctrlMode by remember { mutableStateOf(false) }
-
-    // Dragging state
-    var isDragging by remember { mutableStateOf(false) }
-
-    // Animation
+    // Animation scale
     val expandScale by animateFloatAsState(
         targetValue = if (isExpanded) 1f else 0f,
         animationSpec = spring(
@@ -110,188 +119,236 @@ fun PathStyleKeyboard(
         label = "expand"
     )
 
-    // Shortcut keys configuration - adjust directions based on side
-    val shortcuts = remember(isOnLeftSide) {
-        if (isOnLeftSide) {
-            // Left side: expand to the right
-            listOf(
-                ShortcutKey("Esc", null, 1.0, -1.0) { onKey(KEY_ESCAPE) },
-                ShortcutKey("Tab", null, 1.0, 0.0) { onKey(KEY_TAB) },
-                ShortcutKey("↑", Icons.Default.KeyboardArrowUp, 0.7, -0.7) { onKey(KEY_UP) },
-                ShortcutKey("→", Icons.AutoMirrored.Filled.KeyboardArrowRight, 1.0, 0.5) { onKey(KEY_RIGHT) },
-                ShortcutKey("↓", Icons.Default.KeyboardArrowDown, 0.7, 0.7) { onKey(KEY_DOWN) },
-                ShortcutKey("←", Icons.AutoMirrored.Filled.KeyboardArrowLeft, 0.3, 0.3) { onKey(KEY_LEFT) },
-                ShortcutKey("^C", null, 0.5, -0.5) { onCtrlKey('C') },
-                ShortcutKey("^D", null, 0.3, -0.3) { onCtrlKey('D') }
-            )
-        } else {
-            // Right side: expand to the left
-            listOf(
-                ShortcutKey("Esc", null, -1.0, -1.0) { onKey(KEY_ESCAPE) },
-                ShortcutKey("Tab", null, -1.0, 0.0) { onKey(KEY_TAB) },
-                ShortcutKey("↑", Icons.Default.KeyboardArrowUp, -0.7, -0.7) { onKey(KEY_UP) },
-                ShortcutKey("→", Icons.AutoMirrored.Filled.KeyboardArrowRight, -0.3, 0.3) { onKey(KEY_RIGHT) },
-                ShortcutKey("↓", Icons.Default.KeyboardArrowDown, -0.7, 0.7) { onKey(KEY_DOWN) },
-                ShortcutKey("←", Icons.AutoMirrored.Filled.KeyboardArrowLeft, -1.0, 0.5) { onKey(KEY_LEFT) },
-                ShortcutKey("^C", null, -0.5, -0.5) { onCtrlKey('C') },
-                ShortcutKey("^D", null, -0.3, -0.3) { onCtrlKey('D') }
-            )
-        }
-    }
+    // Center position of FAB (for calculating button positions)
+    val centerX = animatedX + fabSizePx / 2
+    val centerY = offsetY + fabSizePx / 2
+
+    // Direction multiplier based on side
+    val dirMult = if (isOnLeftSide) 1f else -1f
 
     Box(modifier = modifier.alpha(BASE_ALPHA)) {
-        // Expanded shortcut buttons
         if (expandScale > 0.01f) {
-            shortcuts.forEach { shortcut ->
-                val radius = 65.dp
-                val radiusPx = with(density) { radius.toPx() }
+            // ===== Inner Ring: Arrow Keys (D-pad style) =====
+            // Positioned in a cross pattern
 
-                // Calculate position based on direction
-                val angle = kotlin.math.atan2(shortcut.dirY, shortcut.dirX)
-                val distance = radiusPx * expandScale
-                val btnX = animatedX + cos(angle).toFloat() * distance
-                val btnY = offsetY + sin(angle).toFloat() * distance
+            // Up arrow - top
+            ArrowButton(
+                icon = Icons.Default.KeyboardArrowUp,
+                label = "↑",
+                centerX = centerX,
+                centerY = centerY,
+                angle = -PI.toFloat() / 2,  // -90° (up)
+                radius = innerRadiusPx,
+                scale = expandScale,
+                onClick = { onKey(KEY_UP) }
+            )
 
-                ShortcutButton(
-                    shortcut = shortcut,
-                    isCtrlMode = ctrlMode,
-                    scale = expandScale,
-                    modifier = Modifier.offset { IntOffset(btnX.roundToInt(), btnY.roundToInt()) },
-                    onClick = {
-                        shortcut.action()
-                        if (!ctrlMode) {
-                            isExpanded = false
-                        }
-                    }
+            // Down arrow - bottom
+            ArrowButton(
+                icon = Icons.Default.KeyboardArrowDown,
+                label = "↓",
+                centerX = centerX,
+                centerY = centerY,
+                angle = PI.toFloat() / 2,  // 90° (down)
+                radius = innerRadiusPx,
+                scale = expandScale,
+                onClick = { onKey(KEY_DOWN) }
+            )
+
+            // Left arrow
+            ArrowButton(
+                icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                label = "←",
+                centerX = centerX,
+                centerY = centerY,
+                angle = if (isOnLeftSide) PI.toFloat() * 0.85f else PI.toFloat() * 0.15f,
+                radius = innerRadiusPx,
+                scale = expandScale,
+                onClick = { onKey(KEY_LEFT) }
+            )
+
+            // Right arrow
+            ArrowButton(
+                icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                label = "→",
+                centerX = centerX,
+                centerY = centerY,
+                angle = if (isOnLeftSide) PI.toFloat() * 0.15f else PI.toFloat() * 0.85f,
+                radius = innerRadiusPx,
+                scale = expandScale,
+                onClick = { onKey(KEY_RIGHT) }
+            )
+
+            // ===== Outer Ring: Function Keys =====
+            // Arranged in an arc, avoiding overlap with arrows
+
+            val outerKeys = if (isOnLeftSide) {
+                listOf(
+                    FunctionKey("Esc", -55f, FUNCTION_COLOR) { onKey(KEY_ESCAPE) },
+                    FunctionKey("Tab", -20f, FUNCTION_COLOR) { onKey(KEY_TAB) },
+                    FunctionKey("^C", 15f, CTRL_COLOR) { onCtrlKey('C') },
+                    FunctionKey("^D", 50f, CTRL_COLOR) { onCtrlKey('D') },
+                    FunctionKey("^Z", 85f, CTRL_COLOR) { onCtrlKey('Z') }
+                )
+            } else {
+                listOf(
+                    FunctionKey("Esc", 180f + 55f, FUNCTION_COLOR) { onKey(KEY_ESCAPE) },
+                    FunctionKey("Tab", 180f + 20f, FUNCTION_COLOR) { onKey(KEY_TAB) },
+                    FunctionKey("^C", 180f - 15f, CTRL_COLOR) { onCtrlKey('C') },
+                    FunctionKey("^D", 180f - 50f, CTRL_COLOR) { onCtrlKey('D') },
+                    FunctionKey("^Z", 180f - 85f, CTRL_COLOR) { onCtrlKey('Z') }
                 )
             }
 
-            // Ctrl toggle button
-            val ctrlBtnX = if (isOnLeftSide) animatedX + 70 else animatedX - 70
-            Surface(
-                modifier = Modifier
-                    .offset { IntOffset(ctrlBtnX.roundToInt(), (offsetY - 50).roundToInt()) }
-                    .size(36.dp)
-                    .scale(expandScale)
-                    .alpha(expandScale)
-                    .pointerInput(Unit) {
-                        detectTapGestures {
-                            ctrlMode = !ctrlMode
-                        }
-                    },
-                shape = CircleShape,
-                color = if (ctrlMode) Color(0xFF4CAF50) else Color(0xFF424242).copy(alpha = 0.9f)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Ctrl",
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+            outerKeys.forEach { key ->
+                FunctionButton(
+                    label = key.label,
+                    centerX = centerX,
+                    centerY = centerY,
+                    angleDegrees = key.angleDegrees,
+                    radius = outerRadiusPx,
+                    scale = expandScale,
+                    color = key.color,
+                    onClick = {
+                        key.action()
+                        isExpanded = false
+                    }
+                )
             }
         }
 
-        // Main FAB
+        // ===== Main FAB =====
         Surface(
             modifier = Modifier
                 .offset { IntOffset(animatedX.roundToInt(), offsetY.roundToInt()) }
                 .size(FAB_SIZE)
                 .pointerInput(Unit) {
                     detectDragGestures(
-                        onDragStart = { isDragging = true },
+                        onDragStart = { },
                         onDragEnd = {
-                            isDragging = false
                             // Snap to nearest side
-                            val centerX = offsetX + fabSizePx / 2
-                            isOnLeftSide = centerX < screenWidth / 2
+                            val fabCenterX = offsetX + fabSizePx / 2
+                            isOnLeftSide = fabCenterX < screenWidth / 2
                             offsetX = if (isOnLeftSide) {
                                 edgePaddingPx
                             } else {
                                 screenWidth - fabSizePx - edgePaddingPx
                             }
                         },
-                        onDragCancel = { isDragging = false }
+                        onDragCancel = { }
                     ) { change, dragAmount ->
                         change.consume()
                         offsetX = (offsetX + dragAmount.x).coerceIn(0f, screenWidth - fabSizePx)
-                        offsetY = (offsetY + dragAmount.y).coerceIn(0f, screenHeight - fabSizePx - 50)
+                        offsetY = (offsetY + dragAmount.y).coerceIn(fabSizePx, screenHeight - fabSizePx - 50)
                     }
                 }
                 .pointerInput(Unit) {
                     detectTapGestures {
                         isExpanded = !isExpanded
-                        if (!isExpanded) {
-                            ctrlMode = false
-                        }
                     }
                 },
             shape = CircleShape,
-            color = if (isExpanded) Color(0xFFE53935).copy(alpha = 0.9f) else Color(0xFF2196F3).copy(alpha = 0.85f),
-            shadowElevation = 4.dp
+            color = if (isExpanded) FAB_EXPANDED_COLOR.copy(alpha = 0.9f) else FAB_COLOR.copy(alpha = 0.85f),
+            shadowElevation = 6.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.Close else Icons.Default.Terminal,
                     contentDescription = if (isExpanded) "Close" else "Open keyboard",
                     tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
     }
 }
 
+/**
+ * Arrow key button - circular, used for direction keys
+ */
 @Composable
-private fun ShortcutButton(
-    shortcut: ShortcutKey,
-    isCtrlMode: Boolean,
+private fun ArrowButton(
+    icon: ImageVector,
+    label: String,
+    centerX: Float,
+    centerY: Float,
+    angle: Float,
+    radius: Float,
     scale: Float,
-    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val btnX = centerX + cos(angle) * radius - with(LocalDensity.current) { ARROW_BUTTON_SIZE.toPx() } / 2
+    val btnY = centerY + sin(angle) * radius - with(LocalDensity.current) { ARROW_BUTTON_SIZE.toPx() } / 2
+
     Surface(
-        modifier = modifier
-            .size(BUTTON_SIZE)
-            .scale(scale)
+        modifier = Modifier
+            .offset { IntOffset(btnX.roundToInt(), btnY.roundToInt()) }
+            .size(ARROW_BUTTON_SIZE)
             .alpha(scale)
             .pointerInput(Unit) {
                 detectTapGestures { onClick() }
             },
         shape = CircleShape,
-        color = if (shortcut.label.startsWith("^")) {
-            if (isCtrlMode) Color(0xFF4CAF50).copy(alpha = 0.9f) else Color(0xFF795548).copy(alpha = 0.85f)
-        } else {
-            Color(0xFF424242).copy(alpha = 0.85f)
-        },
-        shadowElevation = 2.dp
+        color = ARROW_COLOR.copy(alpha = 0.9f),
+        shadowElevation = 3.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
-            if (shortcut.icon != null) {
-                Icon(
-                    imageVector = shortcut.icon,
-                    contentDescription = shortcut.label,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            } else {
-                Text(
-                    text = shortcut.label,
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
 
-private data class ShortcutKey(
+/**
+ * Function key button - rounded rectangle, used for Esc, Tab, Ctrl combos
+ */
+@Composable
+private fun FunctionButton(
+    label: String,
+    centerX: Float,
+    centerY: Float,
+    angleDegrees: Float,
+    radius: Float,
+    scale: Float,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val angleRad = angleDegrees * PI.toFloat() / 180f
+    val btnSizePx = with(LocalDensity.current) { FUNCTION_BUTTON_SIZE.toPx() }
+    val btnX = centerX + cos(angleRad) * radius - btnSizePx / 2
+    val btnY = centerY + sin(angleRad) * radius - btnSizePx / 2
+
+    Surface(
+        modifier = Modifier
+            .offset { IntOffset(btnX.roundToInt(), btnY.roundToInt()) }
+            .size(FUNCTION_BUTTON_SIZE)
+            .alpha(scale)
+            .pointerInput(Unit) {
+                detectTapGestures { onClick() }
+            },
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(alpha = 0.9f),
+        shadowElevation = 3.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = if (label.length > 2) 11.sp else 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+private data class FunctionKey(
     val label: String,
-    val icon: ImageVector?,
-    val dirX: Double,  // Direction X (-1 to 1)
-    val dirY: Double,  // Direction Y (-1 to 1)
+    val angleDegrees: Float,
+    val color: Color,
     val action: () -> Unit
 )
 
