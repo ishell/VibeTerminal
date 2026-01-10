@@ -128,28 +128,34 @@ fun PathStyleKeyboard(
 
     Box(modifier = modifier.alpha(BASE_ALPHA)) {
         if (expandScale > 0.01f) {
-            // ===== Inner Ring: Arrow Keys (D-pad style) =====
-            // Positioned in a cross pattern
+            // All buttons expand towards screen center (opposite side of FAB)
+            // Left side FAB -> buttons expand to the RIGHT (0° is right)
+            // Right side FAB -> buttons expand to the LEFT (180° is left)
 
-            // Up arrow - top
+            val baseAngle = if (isOnLeftSide) 0f else 180f
+
+            // ===== Inner Ring: Arrow Keys =====
+            // Arranged in a fan pattern on one side only
+
+            // Up arrow
             ArrowButton(
                 icon = Icons.Default.KeyboardArrowUp,
                 label = "↑",
                 centerX = centerX,
                 centerY = centerY,
-                angle = -PI.toFloat() / 2,  // -90° (up)
+                angleDegrees = baseAngle - 45f,  // Upper position
                 radius = innerRadiusPx,
                 scale = expandScale,
                 onClick = { onKey(KEY_UP) }
             )
 
-            // Down arrow - bottom
+            // Down arrow
             ArrowButton(
                 icon = Icons.Default.KeyboardArrowDown,
                 label = "↓",
                 centerX = centerX,
                 centerY = centerY,
-                angle = PI.toFloat() / 2,  // 90° (down)
+                angleDegrees = baseAngle + 45f,  // Lower position
                 radius = innerRadiusPx,
                 scale = expandScale,
                 onClick = { onKey(KEY_DOWN) }
@@ -161,7 +167,7 @@ fun PathStyleKeyboard(
                 label = "←",
                 centerX = centerX,
                 centerY = centerY,
-                angle = if (isOnLeftSide) PI.toFloat() * 0.85f else PI.toFloat() * 0.15f,
+                angleDegrees = baseAngle + 15f,  // Middle-lower
                 radius = innerRadiusPx,
                 scale = expandScale,
                 onClick = { onKey(KEY_LEFT) }
@@ -173,32 +179,22 @@ fun PathStyleKeyboard(
                 label = "→",
                 centerX = centerX,
                 centerY = centerY,
-                angle = if (isOnLeftSide) PI.toFloat() * 0.15f else PI.toFloat() * 0.85f,
+                angleDegrees = baseAngle - 15f,  // Middle-upper
                 radius = innerRadiusPx,
                 scale = expandScale,
                 onClick = { onKey(KEY_RIGHT) }
             )
 
             // ===== Outer Ring: Function Keys =====
-            // Arranged in an arc, avoiding overlap with arrows
+            // All on the same side, spread in an arc
 
-            val outerKeys = if (isOnLeftSide) {
-                listOf(
-                    FunctionKey("Esc", -55f, FUNCTION_COLOR) { onKey(KEY_ESCAPE) },
-                    FunctionKey("Tab", -20f, FUNCTION_COLOR) { onKey(KEY_TAB) },
-                    FunctionKey("^C", 15f, CTRL_COLOR) { onCtrlKey('C') },
-                    FunctionKey("^D", 50f, CTRL_COLOR) { onCtrlKey('D') },
-                    FunctionKey("^Z", 85f, CTRL_COLOR) { onCtrlKey('Z') }
-                )
-            } else {
-                listOf(
-                    FunctionKey("Esc", 180f + 55f, FUNCTION_COLOR) { onKey(KEY_ESCAPE) },
-                    FunctionKey("Tab", 180f + 20f, FUNCTION_COLOR) { onKey(KEY_TAB) },
-                    FunctionKey("^C", 180f - 15f, CTRL_COLOR) { onCtrlKey('C') },
-                    FunctionKey("^D", 180f - 50f, CTRL_COLOR) { onCtrlKey('D') },
-                    FunctionKey("^Z", 180f - 85f, CTRL_COLOR) { onCtrlKey('Z') }
-                )
-            }
+            val outerKeys = listOf(
+                FunctionKey("Esc", baseAngle - 60f, FUNCTION_COLOR) { onKey(KEY_ESCAPE) },
+                FunctionKey("Tab", baseAngle - 30f, FUNCTION_COLOR) { onKey(KEY_TAB) },
+                FunctionKey("^C", baseAngle, CTRL_COLOR) { onCtrlKey('C') },
+                FunctionKey("^D", baseAngle + 30f, CTRL_COLOR) { onCtrlKey('D') },
+                FunctionKey("^Z", baseAngle + 60f, CTRL_COLOR) { onCtrlKey('Z') }
+            )
 
             outerKeys.forEach { key ->
                 FunctionButton(
@@ -272,13 +268,15 @@ private fun ArrowButton(
     label: String,
     centerX: Float,
     centerY: Float,
-    angle: Float,
+    angleDegrees: Float,
     radius: Float,
     scale: Float,
     onClick: () -> Unit
 ) {
-    val btnX = centerX + cos(angle) * radius - with(LocalDensity.current) { ARROW_BUTTON_SIZE.toPx() } / 2
-    val btnY = centerY + sin(angle) * radius - with(LocalDensity.current) { ARROW_BUTTON_SIZE.toPx() } / 2
+    val angleRad = angleDegrees * PI.toFloat() / 180f
+    val btnSizePx = with(LocalDensity.current) { ARROW_BUTTON_SIZE.toPx() }
+    val btnX = centerX + cos(angleRad) * radius - btnSizePx / 2
+    val btnY = centerY + sin(angleRad) * radius - btnSizePx / 2
 
     Surface(
         modifier = Modifier
