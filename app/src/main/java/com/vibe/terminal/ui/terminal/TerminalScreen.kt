@@ -418,8 +418,8 @@ fun TerminalScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                             )
 
-                            // Termius-style keyboard bar (hidden in landscape mode)
-                            if (!isLandscapeMode && keyboardStyle in listOf(
+                            // Termius-style keyboard bar (always visible at bottom)
+                            if (keyboardStyle in listOf(
                                     UserPreferences.KEYBOARD_STYLE_TERMIUS,
                                     UserPreferences.KEYBOARD_STYLE_BOTH
                                 )) {
