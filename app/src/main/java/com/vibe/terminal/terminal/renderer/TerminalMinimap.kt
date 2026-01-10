@@ -104,7 +104,7 @@ private fun handleMinimapClick(
 /**
  * 在 alternate screen mode (zellij/vim/tmux) 下渲染 minimap
  * 只渲染当前屏幕内容，不包括 scrollback
- * 使用更高分辨率渲染以获得更好的清晰度，包含彩色显示
+ * 使用 VS Code 风格的细腻渲染 - 用细小的点/线代替方块
  */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMinimapAlternateScreen(
     emulator: TerminalEmulator,
@@ -119,42 +119,44 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMinimapAlternat
 
     if (screenRows <= 0 || cols <= 0) return
 
-    // Calculate pixel size for each cell in minimap
-    // Use finer granularity for better resolution
-    val lineHeight = (canvasHeight / screenRows).coerceAtLeast(1f)
-    val charWidth = (canvasWidth / cols).coerceAtLeast(0.5f)
+    // VS Code style: each character is represented by 1-2 pixel width dots
+    // Line height is about 2-4 pixels for readability
+    val lineHeight = (canvasHeight / screenRows).coerceIn(2f, 6f)
+    val charWidth = (canvasWidth / cols).coerceIn(1f, 2f)
 
-    // Draw current screen content with higher resolution and full color
+    // Dot dimensions - much smaller than full cell for refined look
+    val dotWidth = (charWidth * 0.6f).coerceIn(0.8f, 1.5f)
+    val dotHeight = (lineHeight * 0.5f).coerceIn(1f, 2.5f)
+
+    // Draw current screen content with VS Code style dots
     for (row in 0 until screenRows) {
-        val y = row * lineHeight
+        val y = row * lineHeight + (lineHeight - dotHeight) / 2  // Center vertically
         if (y >= canvasHeight) break
 
-        // Render every column for better fidelity (no skipping)
         for (colIdx in 0 until cols) {
             val x = colIdx * charWidth
             val cell = emulator.getCell(row, colIdx)
 
-            // Get background color first
+            // Get background color - draw subtle background for non-default colors
             val bgColor = getTerminalColor(cell.attribute.backgroundColor, colorScheme)
-
-            // Draw background if it's not the default background
             if (bgColor != null && bgColor != colorScheme.background) {
                 drawRect(
-                    color = bgColor,
-                    topLeft = Offset(x, y),
-                    size = Size(charWidth.coerceAtLeast(1f), lineHeight.coerceAtLeast(1f))
+                    color = bgColor.copy(alpha = 0.4f),
+                    topLeft = Offset(x, row * lineHeight),
+                    size = Size(charWidth, lineHeight)
                 )
             }
 
-            // Draw foreground character if present
+            // Draw foreground as small dot/line for non-empty characters
             if (cell.character.isNotBlank() && cell.character != " " && cell.character != "\u0000") {
                 val fgColor = getTerminalColor(cell.attribute.foregroundColor, colorScheme)
                     ?: colorScheme.foreground
 
+                // Use slightly transparent color for smoother appearance
                 drawRect(
-                    color = fgColor,
+                    color = fgColor.copy(alpha = 0.85f),
                     topLeft = Offset(x, y),
-                    size = Size(charWidth.coerceAtLeast(0.8f), lineHeight.coerceAtLeast(1f))
+                    size = Size(dotWidth, dotHeight)
                 )
             }
         }
@@ -170,7 +172,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMinimapAlternat
 
 /**
  * 普通模式下渲染 minimap (包括 scrollback)
- * 针对大量历史记录进行性能优化，但保持较好的视觉效果和彩色显示
+ * 使用 VS Code 风格的细腻渲染 - 用细小的点/线代替方块
+ * 针对大量历史记录进行性能优化
  */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMinimap(
     emulator: TerminalEmulator,
@@ -187,71 +190,74 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMinimap(
 
     if (totalLines <= 0 || cols <= 0) return
 
-    // Calculate pixel size for each cell in minimap
-    val lineHeight = (canvasHeight / totalLines).coerceAtLeast(0.5f)
-    val charWidth = (canvasWidth / cols).coerceAtLeast(0.3f)
+    // VS Code style dimensions
+    val lineHeight = (canvasHeight / totalLines).coerceIn(1f, 4f)
+    val charWidth = (canvasWidth / cols).coerceIn(0.5f, 2f)
 
-    // Determine sampling step based on total lines
-    // For very long histories, sample more aggressively
+    // Dot dimensions for refined look
+    val dotWidth = (charWidth * 0.6f).coerceIn(0.5f, 1.2f)
+    val dotHeight = (lineHeight * 0.5f).coerceIn(0.5f, 2f)
+
+    // Determine sampling step based on total lines for performance
     val lineStep = when {
+        totalLines > 10000 -> 8
         totalLines > 5000 -> 4
         totalLines > 2000 -> 2
         else -> 1
     }
 
-    // Column sampling - render more columns for better detail
+    // Column sampling for very wide terminals
     val colStep = when {
+        cols > 300 -> 3
         cols > 200 -> 2
         else -> 1
     }
 
-    // Draw all lines (scrollback + current screen) with colors
+    // Draw all lines (scrollback + current screen) with VS Code style dots
     for (lineIdx in 0 until totalLines step lineStep) {
-        val y = lineIdx * lineHeight
-        if (y >= canvasHeight) break
+        val baseY = lineIdx * lineHeight
+        val y = baseY + (lineHeight * lineStep - dotHeight) / 2  // Center vertically
+        if (baseY >= canvasHeight) break
 
         for (colIdx in 0 until cols step colStep) {
             val x = colIdx * charWidth
             val cell = emulator.getCellAbsolute(lineIdx, colIdx)
 
-            val rectWidth = (charWidth * colStep).coerceAtLeast(0.8f)
-            val rectHeight = (lineHeight * lineStep).coerceAtLeast(0.5f)
+            val effectiveDotWidth = (dotWidth * colStep).coerceIn(0.5f, 2f)
+            val effectiveDotHeight = (dotHeight * lineStep).coerceIn(0.5f, 3f)
 
-            // Get background color
+            // Get background color - draw subtle background for non-default colors
             val bgColor = getTerminalColor(cell.attribute.backgroundColor, colorScheme)
-
-            // Draw background if it's not the default background
             if (bgColor != null && bgColor != colorScheme.background) {
                 drawRect(
-                    color = bgColor,
-                    topLeft = Offset(x, y),
-                    size = Size(rectWidth, rectHeight)
+                    color = bgColor.copy(alpha = 0.35f),
+                    topLeft = Offset(x, baseY),
+                    size = Size(charWidth * colStep, lineHeight * lineStep)
                 )
             }
 
-            // Draw foreground character if present
+            // Draw foreground as small dot for non-empty characters
             if (cell.character.isNotBlank() && cell.character != " " && cell.character != "\u0000") {
                 val fgColor = getTerminalColor(cell.attribute.foregroundColor, colorScheme)
                     ?: colorScheme.foreground
 
                 drawRect(
-                    color = fgColor,
+                    color = fgColor.copy(alpha = 0.8f),
                     topLeft = Offset(x, y),
-                    size = Size(rectWidth, rectHeight)
+                    size = Size(effectiveDotWidth, effectiveDotHeight)
                 )
             }
         }
     }
 
     // Draw viewport indicator (current visible area)
-    // viewport starts at (scrollbackSize - scrollOffset) and spans screenRows
     val viewportStartLine = scrollbackSize - emulator.scrollOffset
     val viewportY = viewportStartLine * lineHeight
     val viewportHeight = screenRows * lineHeight
 
-    // Viewport background highlight
+    // Viewport background highlight - subtle
     drawRect(
-        color = Color.White.copy(alpha = 0.15f),
+        color = Color.White.copy(alpha = 0.1f),
         topLeft = Offset(0f, viewportY),
         size = Size(canvasWidth, viewportHeight)
     )
@@ -260,7 +266,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMinimap(
     drawRect(
         color = Color(0xFF569CD6),
         topLeft = Offset(0f, viewportY),
-        size = Size(3f, viewportHeight)
+        size = Size(2f, viewportHeight)
     )
 }
 
