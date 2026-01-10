@@ -1,0 +1,8 @@
+VibeTerminal 首个版本：
+• 完整 SSH 终端，支持 ANSI/xterm 模拟
+• Zellij 多路复用器集成
+• VS Code 风格迷你地图
+• Path 风格浮动键盘
+• Termius 风格键盘栏
+• 基于项目的连接管理
+• 加密凭证存储

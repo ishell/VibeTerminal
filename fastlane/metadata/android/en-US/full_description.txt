@@ -1,0 +1,20 @@
+VibeTerminal is a modern SSH terminal client for Android with advanced features:
+
+Features:
+• Full terminal emulation with ANSI/xterm support
+• Zellij multiplexer integration for panel management
+• VS Code style minimap for quick navigation
+• Path-style floating keyboard with staggered animation
+• Termius-style keyboard bar with common shortcuts
+• Project-based connection management
+• Conversation history tracking for Claude Code sessions
+• SQLCipher encrypted database for secure credential storage
+• Nerd Font icon support
+• Dark theme optimized for terminal use
+
+Security:
+• SSH key authentication (RSA, Ed25519, ECDSA)
+• Encrypted credential storage using Android Keystore
+• Host key fingerprint verification
+
+This app is designed for developers who work with remote servers and want a powerful terminal experience on Android.

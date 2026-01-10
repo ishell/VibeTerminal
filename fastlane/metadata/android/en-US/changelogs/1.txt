@@ -1,0 +1,8 @@
+Initial release of VibeTerminal:
+• Full SSH terminal with ANSI/xterm emulation
+• Zellij multiplexer integration
+• VS Code style minimap
+• Path-style floating keyboard
+• Termius-style keyboard bar
+• Project-based connection management
+• Encrypted credential storage

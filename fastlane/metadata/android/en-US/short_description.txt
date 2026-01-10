@@ -1,0 +1,1 @@
+Modern SSH terminal with Zellij integration and Claude Code support.
