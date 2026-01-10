@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -70,7 +72,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.terminal.data.conversation.ConversationParser
 import com.vibe.terminal.domain.model.ConversationSession
 import com.vibe.terminal.domain.model.ConversationTopic
+import com.vibe.terminal.domain.model.MatchType
 import com.vibe.terminal.domain.model.ProjectRoadmap
+import com.vibe.terminal.domain.model.RelatedSession
 import com.vibe.terminal.domain.model.RoadmapGroup
 import com.vibe.terminal.domain.model.RoadmapSection
 import com.vibe.terminal.domain.model.RoadmapTask
@@ -1459,7 +1463,7 @@ private fun RoadmapTaskItem(
     modifier: Modifier = Modifier
 ) {
     var showRelatedSessions by remember { mutableStateOf(false) }
-    var selectedSessionId by remember { mutableStateOf<String?>(null) }
+    var selectedRelatedSession by remember { mutableStateOf<RelatedSession?>(null) }
 
     // 使用有效状态（本地完成优先）
     val effectiveStatus = task.getEffectiveStatus()
@@ -1608,7 +1612,7 @@ private fun RoadmapTaskItem(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 2.dp)
-                                .clickable { selectedSessionId = relatedSession.sessionId },
+                                .clickable { selectedRelatedSession = relatedSession },
                             shape = RoundedCornerShape(4.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         ) {
@@ -1645,17 +1649,288 @@ private fun RoadmapTaskItem(
         }
     }
 
-    // Session detail dialog
-    selectedSessionId?.let { sessionId ->
-        val session = sessions.find { it.sessionId == sessionId }
-        if (session != null) {
-            SessionDetailDialog(
-                session = session,
-                dateFormatter = dateFormatter,
-                onDismiss = { selectedSessionId = null }
-            )
+    // Related session detail dialog - shows only the specific matched segment
+    selectedRelatedSession?.let { relatedSession ->
+        val session = sessions.find { it.sessionId == relatedSession.sessionId }
+        // Find the specific segment that matches the timestamp
+        val matchedSegment = session?.segments?.find { segment ->
+            segment.timestamp == relatedSession.timestamp ||
+            segment.userMessage.contains(relatedSession.matchedText.take(50)) ||
+            segment.assistantMessages.any { msg ->
+                msg.contentBlocks.any { block ->
+                    when (block) {
+                        is com.vibe.terminal.domain.model.ContentBlock.Text ->
+                            block.text.contains(relatedSession.matchedText.take(50))
+                        is com.vibe.terminal.domain.model.ContentBlock.ToolUse ->
+                            block.toolName.contains(relatedSession.matchedText.take(20))
+                        else -> false
+                    }
+                }
+            }
         }
+
+        RelatedSessionDetailDialog(
+            relatedSession = relatedSession,
+            segment = matchedSegment,
+            dateFormatter = dateFormatter,
+            onDismiss = { selectedRelatedSession = null }
+        )
     }
+}
+
+/**
+ * 关联对话详情对话框
+ * 只显示那一条具体的关联内容，而不是整个会话
+ */
+@Composable
+private fun RelatedSessionDetailDialog(
+    relatedSession: RelatedSession,
+    segment: com.vibe.terminal.domain.model.ConversationSegment?,
+    dateFormatter: DateTimeFormatter,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Match type badge
+                    val matchTypeText = when (relatedSession.matchType) {
+                        MatchType.EXACT -> "精确匹配"
+                        MatchType.KEYWORD -> "关键词"
+                        MatchType.TODO_WRITE -> "TodoWrite"
+                        MatchType.SEMANTIC -> "语义相关"
+                    }
+                    val matchTypeColor = when (relatedSession.matchType) {
+                        MatchType.EXACT -> StatusConnected
+                        MatchType.KEYWORD -> Color(0xFF2196F3)
+                        MatchType.TODO_WRITE -> Color(0xFFFF9800)
+                        MatchType.SEMANTIC -> Color(0xFF9C27B0)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = matchTypeColor.copy(alpha = 0.2f)
+                    ) {
+                        Text(
+                            text = matchTypeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = matchTypeColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = "关联详情",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = dateFormatter.format(relatedSession.timestamp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (relatedSession.sessionSlug != null) {
+                    Text(
+                        text = relatedSession.sessionSlug,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 匹配的文本
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "匹配内容",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = relatedSession.matchedText,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+
+                // 如果找到了具体的 segment，显示详细内容
+                if (segment != null) {
+                    HorizontalDivider()
+
+                    // 用户消息
+                    if (segment.userMessage.isNotBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "U",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "用户消息",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = segment.userMessage,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+
+                    // 助手回复
+                    if (segment.assistantMessages.isNotEmpty()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "A",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "助手回复",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                segment.assistantMessages.forEach { msg ->
+                                    msg.contentBlocks.forEach { block ->
+                                        when (block) {
+                                            is com.vibe.terminal.domain.model.ContentBlock.Text -> {
+                                                if (block.text.isNotBlank()) {
+                                                    Text(
+                                                        text = block.text,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        modifier = Modifier.padding(vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            is com.vibe.terminal.domain.model.ContentBlock.ToolUse -> {
+                                                Surface(
+                                                    color = Color(0xFF2196F3).copy(alpha = 0.1f),
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    modifier = Modifier.padding(vertical = 2.dp)
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(
+                                                            text = "🔧 ${block.toolName}",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = Color(0xFF2196F3),
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                        val preview = getToolInputPreview(block.toolName, block.input)
+                                                        if (preview.isNotBlank()) {
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(
+                                                                text = preview,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                fontSize = 10.sp,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            is com.vibe.terminal.domain.model.ContentBlock.Thinking -> {
+                                                Surface(
+                                                    color = Color(0xFF9C27B0).copy(alpha = 0.1f),
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    modifier = Modifier.padding(vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "💭 ${block.thinking.take(200)}${if (block.thinking.length > 200) "..." else ""}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        modifier = Modifier.padding(8.dp),
+                                                        fontSize = 10.sp,
+                                                        color = Color(0xFF9C27B0)
+                                                    )
+                                                }
+                                            }
+                                            else -> {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 特征标签
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        if (segment.hasThinking) {
+                            FeatureChip("Thinking", Color(0xFF9C27B0))
+                        }
+                        if (segment.hasToolUse) {
+                            FeatureChip("Tools", Color(0xFF2196F3))
+                        }
+                        if (segment.hasCodeChange) {
+                            FeatureChip("Code", Color(0xFF4CAF50))
+                        }
+                    }
+                } else {
+                    // 没有找到具体 segment 时的提示
+                    Text(
+                        text = "无法找到对应的对话段落详情",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
 }
 
 /**
