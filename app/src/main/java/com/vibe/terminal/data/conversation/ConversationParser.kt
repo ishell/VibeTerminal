@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 import java.time.Duration
+import java.util.UUID
 
 /**
  * Claude Code 对话 JSONL 解析器
@@ -245,7 +246,7 @@ object ConversationParser {
         }
 
         return ConversationTopic(
-            id = firstSegment.id,
+            id = UUID.randomUUID().toString(),
             title = title,
             segments = segments,
             startTime = firstSegment.timestamp,

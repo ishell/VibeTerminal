@@ -123,6 +123,44 @@
     <string name="font_system_mono">系统等宽字体</string>
     <string name="font_system_mono_desc">使用系统默认等宽字体</string>
 
+    <!-- Font Size Settings -->
+    <string name="font_size_compact">紧凑 (10sp)</string>
+    <string name="font_size_compact_desc">约68列，更多内容</string>
+    <string name="font_size_balanced">平衡 (11sp)</string>
+    <string name="font_size_balanced_desc">约62列，平衡兼顾</string>
+    <string name="font_size_default">默认 (12sp)</string>
+    <string name="font_size_default_desc">约57列，清晰易读</string>
+    <string name="font_size_comfort">舒适 (13sp)</string>
+    <string name="font_size_comfort_desc">约52列，眼睛舒适</string>
+    <string name="font_size_large">大字体 (14sp)</string>
+    <string name="font_size_large_desc">约48列，高可读性</string>
+
+    <!-- Keyboard Style Settings -->
+    <string name="keyboard_style">虚拟键盘</string>
+    <string name="keyboard_style_none">无</string>
+    <string name="keyboard_style_none_desc">仅使用系统键盘</string>
+    <string name="keyboard_style_path">浮动按钮</string>
+    <string name="keyboard_style_path_desc">可拖动的悬浮按钮，带放射菜单</string>
+    <string name="keyboard_style_termius">工具栏</string>
+    <string name="keyboard_style_termius_desc">底部功能键和快捷键栏</string>
+    <string name="keyboard_style_both">两者皆有</string>
+    <string name="keyboard_style_both_desc">同时显示浮动按钮和工具栏</string>
+
+    <!-- Notification Settings -->
+    <string name="notifications">通知</string>
+    <string name="notifications_desc">Claude 完成任务或需要输入时发送通知</string>
+
+    <!-- Webhook Server Settings -->
+    <string name="webhook_server">Webhook 服务器</string>
+    <string name="webhook_server_desc">通过 Tailscale 接收推送通知</string>
+    <string name="webhook_server_running">服务器运行中</string>
+    <string name="view_server_config">查看服务器配置</string>
+    <string name="webhook_config_title">Webhook 配置</string>
+    <string name="webhook_address_label">服务器地址</string>
+    <string name="webhook_settings_label">Claude Code settings.json</string>
+    <string name="webhook_settings_hint">将此配置添加到服务器上的 ~/.claude/settings.json</string>
+    <string name="close">关闭</string>
+
     <!-- Host Key Verification -->
     <string name="host_key_verification">主机密钥验证</string>
     <string name="unknown_host_warning">无法确认主机 \'%1$s\' 的真实性。</string>

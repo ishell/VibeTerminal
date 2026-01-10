@@ -22,8 +22,11 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FontDownload
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.ScreenLockPortrait
+import androidx.compose.material.icons.filled.Webhook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -61,9 +65,14 @@ fun SettingsScreen(
     onNavigateToMachineEdit: (String?) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val webhookServerRunning by viewModel.webhookServerRunning.collectAsState()
+    val webhookServerAddress by viewModel.webhookServerAddress.collectAsState()
     var showScreenTimeoutDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showFontDialog by remember { mutableStateOf(false) }
+    var showKeyboardStyleDialog by remember { mutableStateOf(false) }
+    var showWebhookConfigDialog by remember { mutableStateOf(false) }
+    var showFontSizeDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -233,23 +242,49 @@ fun SettingsScreen(
                 }
             }
 
+            // Font size selection
             item {
+                val currentFontSizeLabel = when (uiState.terminalFontSize) {
+                    UserPreferences.FONT_SIZE_COMPACT -> stringResource(R.string.font_size_compact)
+                    UserPreferences.FONT_SIZE_BALANCED -> stringResource(R.string.font_size_balanced)
+                    UserPreferences.FONT_SIZE_DEFAULT -> stringResource(R.string.font_size_default)
+                    UserPreferences.FONT_SIZE_COMFORT -> stringResource(R.string.font_size_comfort)
+                    UserPreferences.FONT_SIZE_LARGE -> stringResource(R.string.font_size_large)
+                    else -> "${uiState.terminalFontSize}sp"
+                }
+
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showFontSizeDialog = true },
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     )
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = stringResource(R.string.terminal_font_size),
-                            style = MaterialTheme.typography.bodyLarge
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FontDownload,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
                         )
-                        Text(
-                            text = "14sp",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.terminal_font_size),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = currentFontSizeLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -325,6 +360,147 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            // Virtual keyboard style
+            item {
+                val currentKeyboardLabel = when (uiState.keyboardStyle) {
+                    UserPreferences.KEYBOARD_STYLE_NONE -> stringResource(R.string.keyboard_style_none)
+                    UserPreferences.KEYBOARD_STYLE_PATH -> stringResource(R.string.keyboard_style_path)
+                    UserPreferences.KEYBOARD_STYLE_TERMIUS -> stringResource(R.string.keyboard_style_termius)
+                    UserPreferences.KEYBOARD_STYLE_BOTH -> stringResource(R.string.keyboard_style_both)
+                    else -> stringResource(R.string.keyboard_style_termius)
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showKeyboardStyleDialog = true },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Keyboard,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.keyboard_style),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = currentKeyboardLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Notification toggle
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.notifications),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = stringResource(R.string.notifications_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.notificationsEnabled,
+                            onCheckedChange = { viewModel.setNotificationsEnabled(it) }
+                        )
+                    }
+                }
+            }
+
+            // Webhook Server toggle
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Webhook,
+                                contentDescription = null,
+                                tint = if (webhookServerRunning) StatusConnected else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.webhook_server),
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Text(
+                                    text = if (webhookServerRunning) {
+                                        webhookServerAddress ?: stringResource(R.string.webhook_server_running)
+                                    } else {
+                                        stringResource(R.string.webhook_server_desc)
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (webhookServerRunning) StatusConnected else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = uiState.webhookServerEnabled,
+                                onCheckedChange = { viewModel.setWebhookServerEnabled(it) }
+                            )
+                        }
+
+                        // Show config button when server is running
+                        if (webhookServerRunning) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { showWebhookConfigDialog = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.view_server_config))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -361,6 +537,39 @@ fun SettingsScreen(
                 viewModel.setTerminalFont(font)
                 showFontDialog = false
             }
+        )
+    }
+
+    // Keyboard Style Dialog
+    if (showKeyboardStyleDialog) {
+        KeyboardStyleDialog(
+            currentValue = uiState.keyboardStyle,
+            onDismiss = { showKeyboardStyleDialog = false },
+            onSelect = { style ->
+                viewModel.setKeyboardStyle(style)
+                showKeyboardStyleDialog = false
+            }
+        )
+    }
+
+    // Font Size Dialog
+    if (showFontSizeDialog) {
+        FontSizeDialog(
+            currentValue = uiState.terminalFontSize,
+            onDismiss = { showFontSizeDialog = false },
+            onSelect = { size ->
+                viewModel.setTerminalFontSize(size)
+                showFontSizeDialog = false
+            }
+        )
+    }
+
+    // Webhook Config Dialog
+    if (showWebhookConfigDialog) {
+        WebhookConfigDialog(
+            serverAddress = webhookServerAddress ?: "",
+            settingsJson = viewModel.getSettingsJson(),
+            onDismiss = { showWebhookConfigDialog = false }
         )
     }
 }
@@ -599,6 +808,248 @@ private fun FontDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun KeyboardStyleDialog(
+    currentValue: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    data class KeyboardOption(
+        val value: String,
+        val label: String,
+        val description: String
+    )
+
+    val options = listOf(
+        KeyboardOption(
+            UserPreferences.KEYBOARD_STYLE_NONE,
+            stringResource(R.string.keyboard_style_none),
+            stringResource(R.string.keyboard_style_none_desc)
+        ),
+        KeyboardOption(
+            UserPreferences.KEYBOARD_STYLE_PATH,
+            stringResource(R.string.keyboard_style_path),
+            stringResource(R.string.keyboard_style_path_desc)
+        ),
+        KeyboardOption(
+            UserPreferences.KEYBOARD_STYLE_TERMIUS,
+            stringResource(R.string.keyboard_style_termius),
+            stringResource(R.string.keyboard_style_termius_desc)
+        ),
+        KeyboardOption(
+            UserPreferences.KEYBOARD_STYLE_BOTH,
+            stringResource(R.string.keyboard_style_both),
+            stringResource(R.string.keyboard_style_both_desc)
+        )
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.keyboard_style)) },
+        text = {
+            Column {
+                options.forEach { option ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(option.value) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentValue == option.value,
+                            onClick = { onSelect(option.value) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = option.label,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = option.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (currentValue == option.value) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun FontSizeDialog(
+    currentValue: Int,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    data class FontSizeOption(
+        val value: Int,
+        val label: String,
+        val description: String
+    )
+
+    val options = listOf(
+        FontSizeOption(
+            UserPreferences.FONT_SIZE_COMPACT,
+            stringResource(R.string.font_size_compact),
+            stringResource(R.string.font_size_compact_desc)
+        ),
+        FontSizeOption(
+            UserPreferences.FONT_SIZE_BALANCED,
+            stringResource(R.string.font_size_balanced),
+            stringResource(R.string.font_size_balanced_desc)
+        ),
+        FontSizeOption(
+            UserPreferences.FONT_SIZE_DEFAULT,
+            stringResource(R.string.font_size_default),
+            stringResource(R.string.font_size_default_desc)
+        ),
+        FontSizeOption(
+            UserPreferences.FONT_SIZE_COMFORT,
+            stringResource(R.string.font_size_comfort),
+            stringResource(R.string.font_size_comfort_desc)
+        ),
+        FontSizeOption(
+            UserPreferences.FONT_SIZE_LARGE,
+            stringResource(R.string.font_size_large),
+            stringResource(R.string.font_size_large_desc)
+        )
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.terminal_font_size)) },
+        text = {
+            Column {
+                options.forEach { option ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(option.value) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentValue == option.value,
+                            onClick = { onSelect(option.value) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = option.label,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = option.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (currentValue == option.value) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun WebhookConfigDialog(
+    serverAddress: String,
+    settingsJson: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.webhook_config_title)) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Server address
+                Text(
+                    text = stringResource(R.string.webhook_address_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = serverAddress,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Settings.json config
+                Text(
+                    text = stringResource(R.string.webhook_settings_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = stringResource(R.string.webhook_settings_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    modifier = Modifier.height(200.dp)
+                ) {
+                    Text(
+                        text = settingsJson,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
             }
         }
     )

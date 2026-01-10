@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.terminal.data.conversation.ConversationFetcher
 import com.vibe.terminal.data.ssh.HostKeyManager
+import com.vibe.terminal.data.ssh.HostKeyStatus
 import com.vibe.terminal.data.ssh.SshConfig
 import com.vibe.terminal.data.ssh.SshConnectionPool
+import com.vibe.terminal.domain.model.AssistantType
 import com.vibe.terminal.domain.model.ConversationSession
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
@@ -76,98 +78,178 @@ class HomeViewModel @Inject constructor(
 
     fun fetchZellijSessions(machine: Machine) {
         viewModelScope.launch {
-            _dialogState.update { it.copy(isLoadingSessions = true, sessionError = null) }
+            _dialogState.update { it.copy(isLoadingSessions = true, sessionError = null, hostKeyStatus = null) }
 
+            // First check if host key is verified
             val fingerprint = hostKeyManager.getStoredFingerprint(machine.host, machine.port)
-            val sshConfig = SshConfig(
-                host = machine.host,
-                port = machine.port,
-                username = machine.username,
-                authMethod = when (machine.authType) {
-                    Machine.AuthType.PASSWORD -> SshConfig.AuthMethod.Password(machine.password ?: "")
-                    Machine.AuthType.SSH_KEY -> SshConfig.AuthMethod.PublicKey(
-                        privateKey = machine.privateKey ?: "",
-                        passphrase = machine.passphrase
-                    )
-                },
-                trustedFingerprint = fingerprint
-            )
 
-            val result = withContext(Dispatchers.IO) {
-                try {
-                    // 使用连接池执行命令
-                    val listOutput = sshConnectionPool.executeCommand(
-                        sshConfig,
-                        "zellij list-sessions -n 2>/dev/null || zellij list-sessions 2>/dev/null || echo ''"
-                    ).getOrThrow()
+            if (fingerprint == null) {
+                // Need to verify host key first
+                val verifyResult = withContext(Dispatchers.IO) {
+                    sshConnectionPool.verifyHostKey(machine.host, machine.port)
+                }
 
-                    // Parse session names
-                    val ansiRegex = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
-                    val sessions = listOutput.lines()
-                        .map { line -> ansiRegex.replace(line, "").trim() }
-                        .filter { it.isNotBlank() && !it.contains("No active sessions") }
-                        .map { line ->
-                            line.split(" ").firstOrNull()?.trim()?.removeSuffix("(current)") ?: line
+                when (verifyResult) {
+                    is com.vibe.terminal.data.ssh.SshConnectResult.HostKeyVerificationRequired -> {
+                        // Show host key verification dialog
+                        _dialogState.update {
+                            it.copy(
+                                isLoadingSessions = false,
+                                hostKeyStatus = verifyResult.status,
+                                pendingMachine = machine
+                            )
                         }
-                        .filter { it.isNotBlank() && !it.startsWith("[") }
-                        .distinct()
-
-                    // Get working directory for each session
-                    val sessionWorkingDirs = mutableMapOf<String, String>()
-                    for (sessionName in sessions) {
-                        try {
-                            val cwdOutput = sshConnectionPool.executeCommand(
-                                sshConfig,
-                                "zellij -s '$sessionName' action dump-layout 2>/dev/null | grep -m1 'cwd \"' | sed 's/.*cwd \"\\([^\"]*\\)\".*/\\1/'",
-                                timeoutSeconds = 5
-                            ).getOrNull()
-
-                            val cwd = cwdOutput?.trim() ?: ""
-                            if (cwd.isNotBlank() && cwd.startsWith("/")) {
-                                sessionWorkingDirs[sessionName] = cwd
-                            }
-                        } catch (_: Exception) {
-                            // Ignore errors for individual sessions
-                        }
+                        return@launch
                     }
-
-                    Result.success(Pair(sessions, sessionWorkingDirs))
-                } catch (e: Exception) {
-                    Result.failure(e)
+                    is com.vibe.terminal.data.ssh.SshConnectResult.Success -> {
+                        // Host key already verified (shouldn't happen if fingerprint is null, but handle it)
+                    }
+                    is com.vibe.terminal.data.ssh.SshConnectResult.Failed -> {
+                        _dialogState.update {
+                            it.copy(
+                                isLoadingSessions = false,
+                                sessionError = "无法连接到服务器验证主机密钥: ${verifyResult.error.message}"
+                            )
+                        }
+                        return@launch
+                    }
                 }
             }
 
-            result.fold(
-                onSuccess = { (sessions, workingDirs) ->
-                    _dialogState.update {
-                        it.copy(
-                            zellijSessions = sessions,
-                            sessionWorkingDirs = workingDirs,
-                            isLoadingSessions = false,
-                            sessionError = null
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _dialogState.update {
-                        it.copy(
-                            isLoadingSessions = false,
-                            sessionError = error.message ?: "Failed to fetch sessions"
-                        )
-                    }
-                }
+            // Now fetch sessions with verified fingerprint
+            fetchZellijSessionsInternal(machine)
+        }
+    }
+
+    /**
+     * Accept host key and continue fetching Zellij sessions
+     */
+    fun acceptHostKeyAndFetchSessions() {
+        val machine = _dialogState.value.pendingMachine ?: return
+
+        viewModelScope.launch {
+            _dialogState.update { it.copy(isLoadingSessions = true, hostKeyStatus = null) }
+
+            // Save the host key
+            withContext(Dispatchers.IO) {
+                sshConnectionPool.acceptHostKey(machine.host, machine.port)
+            }
+
+            // Continue fetching sessions
+            fetchZellijSessionsInternal(machine)
+        }
+    }
+
+    /**
+     * Reject host key verification
+     */
+    fun rejectHostKey() {
+        _dialogState.update {
+            it.copy(
+                isLoadingSessions = false,
+                hostKeyStatus = null,
+                pendingMachine = null,
+                sessionError = "已拒绝主机密钥验证"
             )
         }
     }
 
-    fun createProject(name: String, machineId: String, zellijSession: String, workingDirectory: String) {
+    /**
+     * Internal function to fetch Zellij sessions (after host key is verified)
+     */
+    private suspend fun fetchZellijSessionsInternal(machine: Machine) {
+        val fingerprint = hostKeyManager.getStoredFingerprint(machine.host, machine.port)
+        val sshConfig = SshConfig(
+            host = machine.host,
+            port = machine.port,
+            username = machine.username,
+            authMethod = when (machine.authType) {
+                Machine.AuthType.PASSWORD -> SshConfig.AuthMethod.Password(machine.password ?: "")
+                Machine.AuthType.SSH_KEY -> SshConfig.AuthMethod.PublicKey(
+                    privateKey = machine.privateKey ?: "",
+                    passphrase = machine.passphrase
+                )
+            },
+            trustedFingerprint = fingerprint
+        )
+
+        val result = withContext(Dispatchers.IO) {
+            try {
+                // 使用连接池执行命令
+                val listOutput = sshConnectionPool.executeCommand(
+                    sshConfig,
+                    "zellij list-sessions -n 2>/dev/null || zellij list-sessions 2>/dev/null || echo ''"
+                ).getOrThrow()
+
+                // Parse session names
+                val ansiRegex = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
+                val sessions = listOutput.lines()
+                    .map { line -> ansiRegex.replace(line, "").trim() }
+                    .filter { it.isNotBlank() && !it.contains("No active sessions") }
+                    .map { line ->
+                        line.split(" ").firstOrNull()?.trim()?.removeSuffix("(current)") ?: line
+                    }
+                    .filter { it.isNotBlank() && !it.startsWith("[") }
+                    .distinct()
+
+                // Get working directory for each session
+                val sessionWorkingDirs = mutableMapOf<String, String>()
+                for (sessionName in sessions) {
+                    try {
+                        val cwdOutput = sshConnectionPool.executeCommand(
+                            sshConfig,
+                            "zellij -s '$sessionName' action dump-layout 2>/dev/null | grep -m1 'cwd \"' | sed 's/.*cwd \"\\([^\"]*\\)\".*/\\1/'",
+                            timeoutSeconds = 5
+                        ).getOrNull()
+
+                        val cwd = cwdOutput?.trim() ?: ""
+                        if (cwd.isNotBlank() && cwd.startsWith("/")) {
+                            sessionWorkingDirs[sessionName] = cwd
+                        }
+                    } catch (_: Exception) {
+                        // Ignore errors for individual sessions
+                    }
+                }
+
+                Result.success(Pair(sessions, sessionWorkingDirs))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+        result.fold(
+            onSuccess = { (sessions, workingDirs) ->
+                _dialogState.update {
+                    it.copy(
+                        zellijSessions = sessions,
+                        sessionWorkingDirs = workingDirs,
+                        isLoadingSessions = false,
+                        sessionError = null,
+                        pendingMachine = null
+                    )
+                }
+            },
+            onFailure = { error ->
+                _dialogState.update {
+                    it.copy(
+                        isLoadingSessions = false,
+                        sessionError = error.message ?: "Failed to fetch sessions",
+                        pendingMachine = null
+                    )
+                }
+            }
+        )
+    }
+
+    fun createProject(name: String, machineId: String, zellijSession: String, workingDirectory: String, assistantType: AssistantType) {
         viewModelScope.launch {
             val project = Project(
                 id = UUID.randomUUID().toString(),
                 name = name,
                 machineId = machineId,
                 zellijSession = zellijSession,
-                workingDirectory = workingDirectory
+                workingDirectory = workingDirectory,
+                assistantType = assistantType
             )
             projectRepository.saveProject(project)
             hideNewProjectDialog()
@@ -214,7 +296,8 @@ class HomeViewModel @Inject constructor(
             // 获取对话文件列表
             val filesResult = conversationFetcher.listConversationFiles(
                 config = sshConfig,
-                projectPath = project.workingDirectory
+                projectPath = project.workingDirectory,
+                assistantType = project.assistantType
             )
 
             filesResult.fold(
@@ -325,7 +408,10 @@ data class NewProjectDialogState(
     val zellijSessions: List<String> = emptyList(),
     val sessionWorkingDirs: Map<String, String> = emptyMap(),  // session -> working directory
     val isLoadingSessions: Boolean = false,
-    val sessionError: String? = null
+    val sessionError: String? = null,
+    // Host key verification state
+    val hostKeyStatus: HostKeyStatus? = null,
+    val pendingMachine: Machine? = null
 )
 
 data class ConversationHistoryState(

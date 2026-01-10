@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -143,7 +144,8 @@ fun TerminalRenderer(
     onTwoFingerSwipeLeft: () -> Unit = {},  // Next tab
     onTwoFingerSwipeRight: () -> Unit = {}, // Previous tab
     onThreeFingerTap: () -> Unit = {},      // Toggle floating panes
-    onSendInput: (String) -> Unit = {}  // 用于发送方向键等输入
+    onSendInput: (String) -> Unit = {},  // 用于发送方向键等输入
+    onSizeChanged: (cols: Int, rows: Int) -> Unit = { _, _ -> }  // 终端大小变化回调
 ) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -186,10 +188,29 @@ fun TerminalRenderer(
     var swipeStartY by remember { mutableFloatStateOf(0f) }
     var isSwipeGesture by remember { mutableStateOf(false) }
 
+    // Track last reported size to avoid duplicate callbacks
+    var lastReportedCols by remember { mutableStateOf(0) }
+    var lastReportedRows by remember { mutableStateOf(0) }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .background(colorScheme.background)
+            .onGloballyPositioned { layoutCoordinates ->
+                // Calculate terminal size based on canvas dimensions
+                val width = layoutCoordinates.size.width.toFloat()
+                val height = layoutCoordinates.size.height.toFloat()
+                if (charSize.width > 0 && charSize.height > 0 && width > 0 && height > 0) {
+                    val cols = (width / charSize.width).toInt().coerceAtLeast(1)
+                    val rows = (height / charSize.height).toInt().coerceAtLeast(1)
+                    // Report size change - ViewModel will filter duplicates
+                    if (cols != lastReportedCols || rows != lastReportedRows) {
+                        lastReportedCols = cols
+                        lastReportedRows = rows
+                        onSizeChanged(cols, rows)
+                    }
+                }
+            }
             // Multi-finger gesture detection (pinch, two-finger swipe, three-finger tap)
             .pointerInput(Unit) {
                 awaitEachGesture {

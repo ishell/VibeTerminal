@@ -45,6 +45,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Notification Webhook Service -->
+        <service
+            android:name=".notification.NotificationWebhookService"
+            android:enabled="true"
+            android:exported="false" />
+
     </application>
 
 </manifest>

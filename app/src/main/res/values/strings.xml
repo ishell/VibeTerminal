@@ -123,6 +123,44 @@
     <string name="font_system_mono">System Monospace</string>
     <string name="font_system_mono_desc">Use system default monospace font</string>
 
+    <!-- Font Size Settings -->
+    <string name="font_size_compact">Compact (10sp)</string>
+    <string name="font_size_compact_desc">~68 columns, more content</string>
+    <string name="font_size_balanced">Balanced (11sp)</string>
+    <string name="font_size_balanced_desc">~62 columns, good balance</string>
+    <string name="font_size_default">Default (12sp)</string>
+    <string name="font_size_default_desc">~57 columns, readable</string>
+    <string name="font_size_comfort">Comfort (13sp)</string>
+    <string name="font_size_comfort_desc">~52 columns, easy on eyes</string>
+    <string name="font_size_large">Large (14sp)</string>
+    <string name="font_size_large_desc">~48 columns, high readability</string>
+
+    <!-- Keyboard Style Settings -->
+    <string name="keyboard_style">Virtual Keyboard</string>
+    <string name="keyboard_style_none">None</string>
+    <string name="keyboard_style_none_desc">Use system keyboard only</string>
+    <string name="keyboard_style_path">Floating Button</string>
+    <string name="keyboard_style_path_desc">Draggable FAB with radial menu</string>
+    <string name="keyboard_style_termius">Toolbar</string>
+    <string name="keyboard_style_termius_desc">Keyboard bar with function keys and shortcuts</string>
+    <string name="keyboard_style_both">Both</string>
+    <string name="keyboard_style_both_desc">Show both floating button and toolbar</string>
+
+    <!-- Notification Settings -->
+    <string name="notifications">Notifications</string>
+    <string name="notifications_desc">Get notified when Claude completes tasks or needs input</string>
+
+    <!-- Webhook Server Settings -->
+    <string name="webhook_server">Webhook Server</string>
+    <string name="webhook_server_desc">Receive push notifications via Tailscale</string>
+    <string name="webhook_server_running">Server running</string>
+    <string name="view_server_config">View Server Config</string>
+    <string name="webhook_config_title">Webhook Configuration</string>
+    <string name="webhook_address_label">Server Address</string>
+    <string name="webhook_settings_label">Claude Code settings.json</string>
+    <string name="webhook_settings_hint">Add this to your ~/.claude/settings.json on the server</string>
+    <string name="close">Close</string>
+
     <!-- Host Key Verification -->
     <string name="host_key_verification">Host Key Verification</string>
     <string name="unknown_host_warning">The authenticity of host \'%1$s\' can\'t be established.</string>

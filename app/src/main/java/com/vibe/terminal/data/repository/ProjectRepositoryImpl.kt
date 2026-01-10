@@ -2,6 +2,7 @@ package com.vibe.terminal.data.repository
 
 import com.vibe.terminal.data.local.dao.ProjectDao
 import com.vibe.terminal.data.local.entity.ProjectEntity
+import com.vibe.terminal.domain.model.AssistantType
 import com.vibe.terminal.domain.model.Project
 import com.vibe.terminal.domain.repository.ProjectRepository
 import kotlinx.coroutines.flow.Flow
@@ -56,6 +57,11 @@ class ProjectRepositoryImpl @Inject constructor(
         machineId = machineId,
         zellijSession = zellijSession,
         workingDirectory = workingDirectory,
+        assistantType = try {
+            AssistantType.valueOf(assistantType)
+        } catch (e: Exception) {
+            AssistantType.CLAUDE_CODE
+        },
         lastConnected = lastConnected
     )
 
@@ -65,6 +71,7 @@ class ProjectRepositoryImpl @Inject constructor(
         machineId = machineId,
         zellijSession = zellijSession,
         workingDirectory = workingDirectory,
+        assistantType = assistantType.name,
         lastConnected = lastConnected
     )
 }

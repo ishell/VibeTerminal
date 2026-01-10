@@ -4,6 +4,7 @@ import android.util.Base64
 import android.util.Log
 import com.vibe.terminal.data.ssh.SshConfig
 import com.vibe.terminal.data.ssh.SshConnectionPool
+import com.vibe.terminal.domain.model.AssistantType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -13,7 +14,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 从远程服务器获取 Claude Code 对话历史
+ * 从远程服务器获取对话历史
+ * 支持 Claude Code 和 OpenCode 两种格式
  * 支持增量同步、压缩传输和智能刷新以优化移动网络体验
  */
 @Singleton
@@ -41,21 +43,115 @@ class ConversationFetcher @Inject constructor(
 
     /**
      * 获取项目的对话历史文件列表（包含修改时间和文件大小）
+     * 根据 assistantType 选择不同的存储路径
      */
     suspend fun listConversationFiles(
         config: SshConfig,
-        projectPath: String
+        projectPath: String,
+        assistantType: AssistantType = AssistantType.CLAUDE_CODE
     ): Result<List<ConversationFileInfo>> = withContext(Dispatchers.IO) {
         try {
-            val encodedPath = encodeProjectPath(projectPath)
-            val claudeDir = "~/.claude/projects/$encodedPath"
+            when (assistantType) {
+                AssistantType.CLAUDE_CODE -> listClaudeCodeFiles(config, projectPath)
+                AssistantType.OPENCODE -> listOpenCodeFiles(config, projectPath)
+                AssistantType.CODEX -> listCodexFiles(config)
+                AssistantType.BOTH -> listAllFiles(config, projectPath)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
-            // 获取文件列表，包含修改时间和大小
-            val command = "for f in $claudeDir/*.jsonl; do [ -f \"\$f\" ] && stat --format='%n|%Y|%s' \"\$f\" 2>/dev/null; done | sort -t'|' -k2 -rn"
-            val output = connectionPool.executeCommand(config, command).getOrThrow()
+    /**
+     * 列出所有支持的 AI 助手对话文件 (Claude Code + OpenCode + Codex)
+     */
+    private suspend fun listAllFiles(
+        config: SshConfig,
+        projectPath: String
+    ): Result<List<ConversationFileInfo>> {
+        val claudeFiles = listClaudeCodeFiles(config, projectPath).getOrElse { emptyList() }
+        val openCodeFiles = listOpenCodeFiles(config, projectPath).getOrElse { emptyList() }
+        val codexFiles = listCodexFiles(config).getOrElse { emptyList() }
 
-            val files = output
-                .lines()
+        // 合并并按修改时间排序
+        val allFiles = (claudeFiles + openCodeFiles + codexFiles)
+            .sortedByDescending { it.modificationTime }
+            .take(20) // 限制总数
+
+        return Result.success(allFiles)
+    }
+
+    /**
+     * 列出 Claude Code 对话文件
+     */
+    private suspend fun listClaudeCodeFiles(
+        config: SshConfig,
+        projectPath: String
+    ): Result<List<ConversationFileInfo>> {
+        val encodedPath = encodeProjectPath(projectPath)
+        val claudeDir = "~/.claude/projects/$encodedPath"
+
+        // 获取文件列表，包含修改时间和大小
+        val command = "for f in $claudeDir/*.jsonl; do [ -f \"\$f\" ] && stat --format='%n|%Y|%s' \"\$f\" 2>/dev/null; done | sort -t'|' -k2 -rn"
+        val output = connectionPool.executeCommand(config, command).getOrThrow()
+
+        val files = output
+            .lines()
+            .filter { it.isNotBlank() && it.contains("|") }
+            .mapNotNull { line ->
+                val parts = line.split("|")
+                if (parts.size >= 2) {
+                    val filePath = parts[0]
+                    val modTime = parts[1].toLongOrNull() ?: 0L
+                    val fileSize = parts.getOrNull(2)?.toLongOrNull() ?: 0L
+                    val fileName = filePath.substringAfterLast("/")
+                    val sessionId = fileName.removeSuffix(".jsonl")
+                    ConversationFileInfo(
+                        sessionId = sessionId,
+                        filePath = filePath,
+                        projectPath = projectPath,
+                        modificationTime = modTime,
+                        fileSize = fileSize,
+                        assistantType = AssistantType.CLAUDE_CODE
+                    )
+                } else null
+            }
+
+        return Result.success(files)
+    }
+
+    /**
+     * 列出 OpenCode 会话文件
+     */
+    private suspend fun listOpenCodeFiles(
+        config: SshConfig,
+        projectPath: String
+    ): Result<List<ConversationFileInfo>> {
+        // OpenCode 存储在 ~/.local/share/opencode/storage/session/<project-hash>/
+        // 会话文件格式: ses_xxx.json
+        val encodedPath = encodeProjectPath(projectPath)
+        val openCodeDir = "~/.local/share/opencode/storage/session"
+
+        // 先找到项目目录（通过 projectID hash）
+        // OpenCode 使用项目路径的 hash 作为目录名
+        val findProjectDirCmd = """
+            for d in $openCodeDir/*/; do
+                [ -d "${'$'}d" ] && echo "${'$'}d"
+            done
+        """.trimIndent()
+
+        val projectDirs = connectionPool.executeCommand(config, findProjectDirCmd).getOrElse { "" }
+            .lines()
+            .filter { it.isNotBlank() }
+
+        val files = mutableListOf<ConversationFileInfo>()
+
+        // 遍历每个项目目录查找会话文件
+        for (projectDir in projectDirs.take(3)) { // 限制搜索范围
+            val listCmd = "for f in ${projectDir}ses_*.json; do [ -f \"\$f\" ] && stat --format='%n|%Y|%s' \"\$f\" 2>/dev/null; done | sort -t'|' -k2 -rn | head -10"
+            val output = connectionPool.executeCommand(config, listCmd, timeoutSeconds = 10).getOrElse { "" }
+
+            output.lines()
                 .filter { it.isNotBlank() && it.contains("|") }
                 .mapNotNull { line ->
                     val parts = line.split("|")
@@ -64,32 +160,78 @@ class ConversationFetcher @Inject constructor(
                         val modTime = parts[1].toLongOrNull() ?: 0L
                         val fileSize = parts.getOrNull(2)?.toLongOrNull() ?: 0L
                         val fileName = filePath.substringAfterLast("/")
-                        val sessionId = fileName.removeSuffix(".jsonl")
+                        val sessionId = fileName.removeSuffix(".json")
                         ConversationFileInfo(
                             sessionId = sessionId,
                             filePath = filePath,
                             projectPath = projectPath,
                             modificationTime = modTime,
-                            fileSize = fileSize
+                            fileSize = fileSize,
+                            assistantType = AssistantType.OPENCODE
                         )
                     } else null
                 }
-
-            Result.success(files)
-        } catch (e: Exception) {
-            Result.failure(e)
+                .also { files.addAll(it) }
         }
+
+        return Result.success(files.sortedByDescending { it.modificationTime }.take(10))
+    }
+
+    /**
+     * 列出 Codex CLI 会话文件
+     * Codex 存储在 ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
+     */
+    private suspend fun listCodexFiles(
+        config: SshConfig
+    ): Result<List<ConversationFileInfo>> {
+        val codexSessionsDir = "~/.codex/sessions"
+
+        // 递归查找最近的 .jsonl 文件
+        val command = """
+            find $codexSessionsDir -name 'rollout-*.jsonl' -type f 2>/dev/null | while read f; do
+                stat --format='%n|%Y|%s' "${'$'}f" 2>/dev/null
+            done | sort -t'|' -k2 -rn | head -15
+        """.trimIndent()
+
+        val output = connectionPool.executeCommand(config, command, timeoutSeconds = 15).getOrElse { "" }
+
+        val files = output.lines()
+            .filter { it.isNotBlank() && it.contains("|") }
+            .mapNotNull { line ->
+                val parts = line.split("|")
+                if (parts.size >= 2) {
+                    val filePath = parts[0]
+                    val modTime = parts[1].toLongOrNull() ?: 0L
+                    val fileSize = parts.getOrNull(2)?.toLongOrNull() ?: 0L
+                    val fileName = filePath.substringAfterLast("/")
+                    val sessionId = fileName.removeSuffix(".jsonl")
+
+                    // 从路径提取 project path (使用目录结构)
+                    // ~/.codex/sessions/2025/01/10/rollout-xxx.jsonl
+                    val pathParts = filePath.split("/")
+                    val projectPath = if (pathParts.size >= 4) {
+                        // 取 sessions 之后的日期目录
+                        pathParts.takeLast(4).dropLast(1).joinToString("/")
+                    } else {
+                        "codex"
+                    }
+
+                    ConversationFileInfo(
+                        sessionId = sessionId,
+                        filePath = filePath,
+                        projectPath = projectPath,
+                        modificationTime = modTime,
+                        fileSize = fileSize,
+                        assistantType = AssistantType.CODEX
+                    )
+                } else null
+            }
+
+        return Result.success(files)
     }
 
     /**
      * 获取并解析对话历史（支持增量同步）
-     *
-     * 优化策略：
-     * 1. 智能刷新：先检查文件大小是否变化
-     * 2. 增量同步：只下载新增的内容
-     * 3. 压缩传输：对传输内容进行 gzip 压缩
-     * 4. 动态超时：根据文件大小调整超时时间
-     * 5. 自动重试：网络失败时自动重试
      */
     suspend fun fetchAndParseConversation(
         config: SshConfig,
@@ -97,50 +239,187 @@ class ConversationFetcher @Inject constructor(
         projectId: String = ""
     ): Result<com.vibe.terminal.domain.model.ConversationSession> = withContext(Dispatchers.IO) {
         try {
-            // 1. 检查数据库缓存是否完全有效（文件大小和修改时间都匹配）
-            if (projectId.isNotBlank() && fileInfo.fileSize > 0) {
-                val hasValidDbCache = dbCache.hasValidCache(
-                    projectId = projectId,
-                    sessionId = fileInfo.sessionId,
-                    fileSize = fileInfo.fileSize,
-                    lastModified = fileInfo.modificationTime
-                )
-
-                if (hasValidDbCache) {
-                    val cached = dbCache.loadFromCache(fileInfo.sessionId)
-                    if (cached != null) {
-                        Log.d(TAG, "Using cached session: ${fileInfo.sessionId}")
-                        return@withContext Result.success(cached)
-                    }
+            // 根据文件的 assistantType 解析，而不是项目的
+            when (fileInfo.assistantType) {
+                AssistantType.CLAUDE_CODE -> fetchAndParseClaudeCode(config, fileInfo, projectId)
+                AssistantType.OPENCODE -> fetchAndParseOpenCode(config, fileInfo, projectId)
+                AssistantType.CODEX -> fetchAndParseCodex(config, fileInfo, projectId)
+                AssistantType.BOTH -> {
+                    // BOTH 不会出现在单个文件上
+                    // 这里默认按 Claude Code 处理
+                    fetchAndParseClaudeCode(config, fileInfo, projectId)
                 }
             }
-
-            // 2. 尝试增量同步（带重试）
-            val jsonlContent = fetchContentWithRetry(config, fileInfo)
-
-            // 3. 解析
-            val session = ConversationParser.parseJsonl(
-                jsonlContent = jsonlContent,
-                sessionId = fileInfo.sessionId,
-                projectPath = fileInfo.projectPath
-            )
-
-            // 4. 保存到数据库缓存
-            if (projectId.isNotBlank()) {
-                dbCache.saveToCache(
-                    projectId = projectId,
-                    filePath = fileInfo.filePath,
-                    fileSize = fileInfo.fileSize,
-                    lastModified = fileInfo.modificationTime,
-                    session = session
-                )
-            }
-
-            Result.success(session)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch session ${fileInfo.sessionId}: ${e.message}")
             Result.failure(e)
         }
+    }
+
+    /**
+     * 获取并解析 Claude Code 对话
+     */
+    private suspend fun fetchAndParseClaudeCode(
+        config: SshConfig,
+        fileInfo: ConversationFileInfo,
+        projectId: String
+    ): Result<com.vibe.terminal.domain.model.ConversationSession> {
+        // 1. 检查数据库缓存是否完全有效
+        if (projectId.isNotBlank() && fileInfo.fileSize > 0) {
+            val hasValidDbCache = dbCache.hasValidCache(
+                projectId = projectId,
+                sessionId = fileInfo.sessionId,
+                fileSize = fileInfo.fileSize,
+                lastModified = fileInfo.modificationTime
+            )
+
+            if (hasValidDbCache) {
+                val cached = dbCache.loadFromCache(fileInfo.sessionId)
+                if (cached != null) {
+                    Log.d(TAG, "Using cached session: ${fileInfo.sessionId}")
+                    return Result.success(cached)
+                }
+            }
+        }
+
+        // 2. 尝试增量同步（带重试）
+        val jsonlContent = fetchContentWithRetry(config, fileInfo)
+
+        // 3. 解析
+        val session = ConversationParser.parseJsonl(
+            jsonlContent = jsonlContent,
+            sessionId = fileInfo.sessionId,
+            projectPath = fileInfo.projectPath
+        )
+
+        // 4. 保存到数据库缓存
+        if (projectId.isNotBlank()) {
+            dbCache.saveToCache(
+                projectId = projectId,
+                filePath = fileInfo.filePath,
+                fileSize = fileInfo.fileSize,
+                lastModified = fileInfo.modificationTime,
+                session = session
+            )
+        }
+
+        return Result.success(session)
+    }
+
+    /**
+     * 获取并解析 OpenCode 对话
+     */
+    private suspend fun fetchAndParseOpenCode(
+        config: SshConfig,
+        fileInfo: ConversationFileInfo,
+        projectId: String
+    ): Result<com.vibe.terminal.domain.model.ConversationSession> {
+        // 1. 获取会话 JSON
+        val sessionJson = connectionPool.executeCommand(config, "cat '${fileInfo.filePath}'", 30)
+            .getOrThrow()
+
+        // 2. 获取该会话的消息列表
+        val messageDir = "~/.local/share/opencode/storage/message/${fileInfo.sessionId}"
+        val messagesListCmd = "ls -1 $messageDir/*.json 2>/dev/null | sort -V"
+        val messageFiles = connectionPool.executeCommand(config, messagesListCmd, 10)
+            .getOrElse { "" }
+            .lines()
+            .filter { it.isNotBlank() }
+
+        // 3. 读取所有消息 JSON
+        val messagesJsonBuilder = StringBuilder("[")
+        var firstMessage = true
+        for (msgFile in messageFiles.take(100)) { // 限制消息数量
+            val msgJson = connectionPool.executeCommand(config, "cat '$msgFile'", 10)
+                .getOrNull() ?: continue
+            if (!firstMessage) messagesJsonBuilder.append(",")
+            messagesJsonBuilder.append(msgJson)
+            firstMessage = false
+        }
+        messagesJsonBuilder.append("]")
+        val messagesJson = messagesJsonBuilder.toString()
+
+        // 4. 获取消息部件（简化处理，只获取文本部件）
+        val partsJsonMap = mutableMapOf<String, List<String>>()
+
+        // 遍历每个消息获取其部件
+        for (msgFile in messageFiles.take(50)) {
+            val msgId = msgFile.substringAfterLast("/").removeSuffix(".json")
+            val partDir = "~/.local/share/opencode/storage/part/$msgId"
+
+            val partFiles = connectionPool.executeCommand(config, "ls -1 $partDir/*.json 2>/dev/null", 5)
+                .getOrElse { "" }
+                .lines()
+                .filter { it.isNotBlank() }
+
+            val parts = partFiles.take(20).mapNotNull { partFile ->
+                connectionPool.executeCommand(config, "cat '$partFile'", 5).getOrNull()
+            }
+
+            if (parts.isNotEmpty()) {
+                partsJsonMap[msgId] = parts
+            }
+        }
+
+        // 5. 解析
+        val session = OpenCodeParser.parseSession(
+            sessionJson = sessionJson,
+            messagesJson = messagesJson,
+            partsJsonMap = partsJsonMap,
+            projectPath = fileInfo.projectPath
+        )
+
+        return Result.success(session)
+    }
+
+    /**
+     * 获取并解析 Codex CLI 对话
+     */
+    private suspend fun fetchAndParseCodex(
+        config: SshConfig,
+        fileInfo: ConversationFileInfo,
+        projectId: String
+    ): Result<com.vibe.terminal.domain.model.ConversationSession> {
+        // 1. 检查数据库缓存是否有效
+        if (projectId.isNotBlank() && fileInfo.fileSize > 0) {
+            val hasValidDbCache = dbCache.hasValidCache(
+                projectId = projectId,
+                sessionId = fileInfo.sessionId,
+                fileSize = fileInfo.fileSize,
+                lastModified = fileInfo.modificationTime
+            )
+
+            if (hasValidDbCache) {
+                val cached = dbCache.loadFromCache(fileInfo.sessionId)
+                if (cached != null) {
+                    Log.d(TAG, "Using cached Codex session: ${fileInfo.sessionId}")
+                    return Result.success(cached)
+                }
+            }
+        }
+
+        // 2. 获取 JSONL 内容（带重试）
+        val jsonlContent = fetchContentWithRetry(config, fileInfo)
+
+        // 3. 使用 CodexParser 解析
+        val session = CodexParser.parseJsonl(
+            jsonlContent = jsonlContent,
+            sessionId = fileInfo.sessionId,
+            projectPath = fileInfo.projectPath
+        )
+
+        // 4. 保存到数据库缓存
+        if (projectId.isNotBlank()) {
+            dbCache.saveToCache(
+                projectId = projectId,
+                filePath = fileInfo.filePath,
+                fileSize = fileInfo.fileSize,
+                lastModified = fileInfo.modificationTime,
+                session = session
+            )
+        }
+
+        return Result.success(session)
     }
 
     /**
@@ -360,5 +639,6 @@ data class ConversationFileInfo(
     val filePath: String,
     val projectPath: String,
     val modificationTime: Long = 0L,
-    val fileSize: Long = 0L
+    val fileSize: Long = 0L,
+    val assistantType: AssistantType = AssistantType.CLAUDE_CODE
 )

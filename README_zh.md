@@ -74,6 +74,96 @@ VibeTerminal 的核心理念是「一个项目 = 一个 Zellij Session」：
 
 使用 Tailscale，你可以从任何地方安全地访问开发服务器，无需将 SSH 暴露在公网。
 
+## 推送通知
+
+VibeTerminal 支持在 Claude Code 完成任务或需要用户输入时发送推送通知。当你不在终端前时，这个功能特别有用。
+
+### 工作原理
+
+VibeTerminal 在手机上运行一个轻量级 HTTP Webhook 服务器。当 Claude Code 完成任务或需要输入时，通过 Tailscale 向手机发送通知。
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  开发服务器                                              │
+│    └─► Claude Code                                      │
+│          │                                              │
+│          │ Hook: 任务完成 / 需要输入                      │
+│          ▼                                              │
+│        curl POST http://100.x.x.x:8765/notify           │
+│                        │                                │
+│                        │ Tailscale                      │
+│                        ▼                                │
+│  手机 (VibeTerminal)                                     │
+│    └─► Webhook 服务器 → Android 通知                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 配置步骤
+
+1. **启用 Webhook 服务器**：进入 **设置 → 终端 → Webhook 服务器**，打开开关
+
+2. **查看配置**：点击 **查看服务器配置**，获取手机的 Tailscale IP 地址和 Claude Code 配置
+
+3. **配置 Claude Code**：在服务器上的 `~/.claude/settings.json` 中添加以下内容：
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "curl -s -X POST 'http://<手机Tailscale-IP>:8765/notify' -H 'Content-Type: application/json' -d '{\"event\":\"stop\",\"project\":\"'$(basename \"$PWD\")'\"}'",
+        "timeout": 5
+      }]
+    }],
+    "Notification": [{
+      "matcher": "permission_prompt|idle_prompt",
+      "hooks": [{
+        "type": "command",
+        "command": "curl -s -X POST 'http://<手机Tailscale-IP>:8765/notify' -H 'Content-Type: application/json' -d '{\"event\":\"input\",\"project\":\"'$(basename \"$PWD\")'\"}'",
+        "timeout": 5
+      }]
+    }]
+  }
+}
+```
+
+将 `<手机Tailscale-IP>` 替换为实际的 Tailscale IP（在配置对话框中显示，通常是 `100.x.x.x`）。
+
+### OpenCode 配置
+
+如果你使用的是 OpenCode 而不是 Claude Code，在 `~/.config/opencode/plugin/webhook.ts` 创建插件文件：
+
+```typescript
+export const WebhookPlugin = async ({ $ }) => ({
+  event: async ({ event }) => {
+    const webhookUrl = "http://<手机Tailscale-IP>:8765/notify"
+
+    if (event.type === "session.idle") {
+      await $`curl -s -X POST '${webhookUrl}' -H 'Content-Type: application/json' -d '{"event":"stop","project":"opencode"}'`
+    }
+    if (event.type === "permission.updated" || event.type === "permission.replied") {
+      await $`curl -s -X POST '${webhookUrl}' -H 'Content-Type: application/json' -d '{"event":"input","project":"opencode"}'`
+    }
+  }
+})
+```
+
+然后在 `~/.config/opencode/opencode.json` 中添加：
+
+```json
+{
+  "plugin": ["./plugin/webhook.ts"]
+}
+```
+
+### 通知类型
+
+| 事件 | 触发条件 | 优先级 |
+|------|---------|--------|
+| 任务完成 | Claude Code 完成任务 | 默认 |
+| 需要输入 | Claude 需要权限或用户输入 | 高 |
+
 ## 许可证
 
 MIT License

@@ -14,6 +14,8 @@ import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
 import com.vibe.terminal.domain.repository.MachineRepository
 import com.vibe.terminal.domain.repository.ProjectRepository
+import com.vibe.terminal.notification.ClaudeNotificationDetector
+import com.vibe.terminal.notification.ClaudeNotificationService
 import com.vibe.terminal.terminal.emulator.TerminalEmulator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +24,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -37,7 +41,8 @@ class TerminalViewModel @Inject constructor(
     private val machineRepository: MachineRepository,
     private val sshClient: SshClient,
     private val hostKeyManager: HostKeyManager,
-    private val userPreferences: UserPreferences
+    private val userPreferences: UserPreferences,
+    private val notificationService: ClaudeNotificationService
 ) : ViewModel() {
 
     private val projectId: String = savedStateHandle["projectId"] ?: ""
@@ -50,6 +55,17 @@ class TerminalViewModel @Inject constructor(
     val isPanelFullscreen: StateFlow<Boolean> = _isPanelFullscreen.asStateFlow()
 
     val connectionState: StateFlow<SshConnectionState> = sshClient.connectionState
+
+    // Claude notification detector
+    private val notificationDetector = ClaudeNotificationDetector()
+
+    // Whether notifications are enabled
+    val notificationsEnabled: StateFlow<Boolean> = userPreferences.notificationsEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true
+        )
 
     /**
      * Screen timeout setting in minutes
@@ -74,6 +90,35 @@ class TerminalViewModel @Inject constructor(
             initialValue = UserPreferences.DEFAULT_TERMINAL_FONT
         )
 
+    /**
+     * Terminal font size setting (sp)
+     * 10 = Compact (~68 cols)
+     * 11 = Balanced (~62 cols)
+     * 12 = Default (~57 cols)
+     * 13 = Comfort (~52 cols)
+     * 14 = Large (~48 cols)
+     */
+    val terminalFontSize: StateFlow<Int> = userPreferences.terminalFontSize
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = UserPreferences.DEFAULT_TERMINAL_FONT_SIZE
+        )
+
+    /**
+     * Virtual keyboard style setting
+     * "none" = No virtual keyboard
+     * "path" = Path style (floating FAB)
+     * "termius" = Termius style (bottom toolbar)
+     * "both" = Both styles together
+     */
+    val keyboardStyle: StateFlow<String> = userPreferences.keyboardStyle
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = UserPreferences.DEFAULT_KEYBOARD_STYLE
+        )
+
     val emulator = TerminalEmulator(columns = 80, rows = 24)
 
     private var outputStream: OutputStream? = null
@@ -81,6 +126,32 @@ class TerminalViewModel @Inject constructor(
 
     init {
         loadProjectAndConnect()
+        observeNotificationEvents()
+    }
+
+    /**
+     * Observe notification events and show system notifications
+     */
+    private fun observeNotificationEvents() {
+        notificationDetector.notificationEvent
+            .onEach { event ->
+                if (event != null && notificationsEnabled.value) {
+                    val projectName = _uiState.value.project?.name
+                    when (event) {
+                        is ClaudeNotificationDetector.NotificationEvent.TaskCompleted -> {
+                            notificationService.notifyTaskCompleted(projectName)
+                        }
+                        is ClaudeNotificationDetector.NotificationEvent.InputNeeded -> {
+                            notificationService.notifyInputNeeded(projectName)
+                        }
+                        is ClaudeNotificationDetector.NotificationEvent.Idle -> {
+                            notificationService.notifyIdle(projectName)
+                        }
+                    }
+                    notificationDetector.clearNotification()
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun loadProjectAndConnect() {
@@ -203,6 +274,10 @@ class TerminalViewModel @Inject constructor(
                 if (bytesRead == -1) break
 
                 val data = buffer.copyOf(bytesRead)
+
+                // Process through notification detector
+                notificationDetector.processOutput(data)
+
                 withContext(Dispatchers.Main) {
                     emulator.processInput(data)
                 }
@@ -215,6 +290,10 @@ class TerminalViewModel @Inject constructor(
     fun sendInput(text: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Mark Claude as working when user sends input
+                if (text.contains("\r") || text.contains("\n")) {
+                    notificationDetector.markClaudeWorking()
+                }
                 outputStream?.write(text.toByteArray())
                 outputStream?.flush()
             } catch (e: Exception) {
@@ -254,9 +333,19 @@ class TerminalViewModel @Inject constructor(
         sendInput("$command\r")
     }
 
+    /**
+     * Resize terminal and notify SSH session
+     * Called from TerminalScreen when canvas size changes
+     */
     fun resize(cols: Int, rows: Int) {
+        // Skip if size hasn't actually changed
+        if (cols == emulator.columns && rows == emulator.rows) return
+
         emulator.resize(cols, rows)
-        sshClient.resizePty(cols, rows)
+        // Resize PTY on IO thread to avoid NetworkOnMainThreadException
+        viewModelScope.launch(Dispatchers.IO) {
+            sshClient.resizePty(cols, rows)
+        }
     }
 
     fun disconnect() {

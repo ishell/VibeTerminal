@@ -85,6 +85,96 @@ For the best experience, we highly recommend using [Tailscale](https://tailscale
 
 With Tailscale, you can securely access your dev server from anywhere without exposing SSH to the public internet.
 
+## Push Notifications
+
+VibeTerminal supports push notifications when Claude Code completes a task or needs user input. This is especially useful when you're not actively watching the terminal.
+
+### How It Works
+
+VibeTerminal runs a lightweight HTTP webhook server on your phone. When Claude Code finishes a task or needs input, it sends a notification to your phone via Tailscale.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Dev Server                                             │
+│    └─► Claude Code                                      │
+│          │                                              │
+│          │ Hook: task completed / input needed          │
+│          ▼                                              │
+│        curl POST http://100.x.x.x:8765/notify           │
+│                        │                                │
+│                        │ Tailscale                      │
+│                        ▼                                │
+│  Phone (VibeTerminal)                                   │
+│    └─► Webhook Server → Android Notification            │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Setup
+
+1. **Enable Webhook Server**: Go to **Settings → Terminal → Webhook Server** and toggle it on
+
+2. **View Configuration**: Tap **View Server Config** to see your phone's Tailscale IP address and the Claude Code configuration
+
+3. **Configure Claude Code**: Add the following to `~/.claude/settings.json` on your server:
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "curl -s -X POST 'http://<phone-tailscale-ip>:8765/notify' -H 'Content-Type: application/json' -d '{\"event\":\"stop\",\"project\":\"'$(basename \"$PWD\")'\"}'",
+        "timeout": 5
+      }]
+    }],
+    "Notification": [{
+      "matcher": "permission_prompt|idle_prompt",
+      "hooks": [{
+        "type": "command",
+        "command": "curl -s -X POST 'http://<phone-tailscale-ip>:8765/notify' -H 'Content-Type: application/json' -d '{\"event\":\"input\",\"project\":\"'$(basename \"$PWD\")'\"}'",
+        "timeout": 5
+      }]
+    }]
+  }
+}
+```
+
+Replace `<phone-tailscale-ip>` with your actual Tailscale IP (shown in the config dialog, typically `100.x.x.x`).
+
+### OpenCode Configuration
+
+If you're using OpenCode instead of Claude Code, create a plugin file at `~/.config/opencode/plugin/webhook.ts`:
+
+```typescript
+export const WebhookPlugin = async ({ $ }) => ({
+  event: async ({ event }) => {
+    const webhookUrl = "http://<phone-tailscale-ip>:8765/notify"
+
+    if (event.type === "session.idle") {
+      await $`curl -s -X POST '${webhookUrl}' -H 'Content-Type: application/json' -d '{"event":"stop","project":"opencode"}'`
+    }
+    if (event.type === "permission.updated" || event.type === "permission.replied") {
+      await $`curl -s -X POST '${webhookUrl}' -H 'Content-Type: application/json' -d '{"event":"input","project":"opencode"}'`
+    }
+  }
+})
+```
+
+Then add it to your `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "plugin": ["./plugin/webhook.ts"]
+}
+```
+
+### Notification Types
+
+| Event | Trigger | Priority |
+|-------|---------|----------|
+| Task Completed | Claude Code finishes a task | Default |
+| Input Needed | Claude needs permission or user input | High |
+
 ## License
 
 MIT License

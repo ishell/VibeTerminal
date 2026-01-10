@@ -1,5 +1,6 @@
 package com.vibe.terminal.ui.terminal
 
+import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -56,6 +59,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,11 +79,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vibe.terminal.data.preferences.UserPreferences
 import com.vibe.terminal.data.ssh.SshConnectionState
 import com.vibe.terminal.data.ssh.SshErrorInfo
 import com.vibe.terminal.terminal.renderer.TerminalColorScheme
+import com.vibe.terminal.terminal.renderer.TerminalMinimap
 import com.vibe.terminal.terminal.renderer.TerminalRenderer
 import com.vibe.terminal.terminal.renderer.getTerminalFontFamily
+import com.vibe.terminal.ui.terminal.keyboard.PathStyleKeyboard
+import com.vibe.terminal.ui.terminal.keyboard.TermiusStyleKeyboard
 import com.vibe.terminal.ui.theme.StatusConnected
 import com.vibe.terminal.ui.theme.StatusConnecting
 import com.vibe.terminal.ui.theme.StatusDisconnected
@@ -96,10 +104,13 @@ fun TerminalScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val screenTimeoutMinutes by viewModel.screenTimeoutMinutes.collectAsState()
     val terminalFont by viewModel.terminalFont.collectAsState()
+    val terminalFontSize by viewModel.terminalFontSize.collectAsState()
+    val keyboardStyle by viewModel.keyboardStyle.collectAsState()
 
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var inputText by remember { mutableStateOf("") }
+    var isLandscapeMode by rememberSaveable { mutableStateOf(false) }
 
     // Get activity for window flags
     val context = LocalContext.current
@@ -140,11 +151,28 @@ fun TerminalScreen(
         }
     }
 
-    DisposableEffect(Unit) {
+    // Note: Don't disconnect here on dispose!
+    // The ViewModel's onCleared() will handle disconnection when actually leaving the screen.
+    // DisposableEffect(Unit) would disconnect on rotation which is wrong since SshClient is singleton.
+
+    // Manage screen orientation for landscape mode
+    DisposableEffect(isLandscapeMode) {
+        if (isLandscapeMode) {
+            // Switch to landscape
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            // Restore to portrait/unspecified
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+
         onDispose {
-            viewModel.disconnect()
+            // Restore orientation when leaving the screen
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
+
+    // In landscape mode, let the system keyboard (e.g., Gboard) handle floating mode
+    // User should enable floating keyboard in Gboard settings for best experience
 
     Scaffold(
         topBar = {
@@ -186,6 +214,16 @@ fun TerminalScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Rotation toggle button
+                    IconButton(onClick = { isLandscapeMode = !isLandscapeMode }) {
+                        Icon(
+                            Icons.Default.ScreenRotation,
+                            contentDescription = if (isLandscapeMode) "Exit landscape" else "Enter landscape",
+                            tint = if (isLandscapeMode) StatusConnected else Color.White
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -232,116 +270,161 @@ fun TerminalScreen(
                 }
 
                 is SshConnectionState.Connected -> {
-                    // Terminal view
-                    TerminalRenderer(
-                        emulator = viewModel.emulator,
-                        colorScheme = TerminalColorScheme.Dark,
-                        fontSize = 12f,
-                        fontFamily = getTerminalFontFamily(terminalFont),
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        onTap = {
-                            focusRequester.requestFocus()
-                            keyboardController?.show()
-                        },
-                        onDoubleTap = {
-                            // Double tap to toggle fullscreen panel
-                            viewModel.togglePanelFullscreen()
-                        },
-                        onPinchIn = {
-                            // Pinch in (fingers together) -> zoom in to single panel
-                            viewModel.enterPanelFullscreen()
-                        },
-                        onPinchOut = {
-                            // Pinch out (fingers apart) -> zoom out to show all panels
-                            viewModel.exitPanelFullscreen()
-                        },
-                        onSwipeLeft = {
-                            // Swipe left -> next panel
-                            viewModel.focusNextPanel()
-                        },
-                        onSwipeRight = {
-                            // Swipe right -> previous panel
-                            viewModel.focusPreviousPanel()
-                        },
-                        // Vertical swipe is now used for scrolling within panel (viewing history)
-                        // Panel up/down navigation removed to avoid conflict with scroll gesture
-                        onTwoFingerSwipeLeft = {
-                            // Two-finger swipe left -> next tab
-                            viewModel.goToNextTab()
-                        },
-                        onTwoFingerSwipeRight = {
-                            // Two-finger swipe right -> previous tab
-                            viewModel.goToPreviousTab()
-                        },
-                        onThreeFingerTap = {
-                            // Three-finger tap -> toggle floating panes
-                            viewModel.toggleFloatingPanes()
-                        },
-                        onSendInput = viewModel::sendInput
-                    )
+                    // Use Box to allow PathStyleKeyboard to float over everything
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Terminal view with minimap
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                            ) {
+                                // Terminal renderer
+                                TerminalRenderer(
+                                    emulator = viewModel.emulator,
+                                    colorScheme = TerminalColorScheme.Dark,
+                                    fontSize = terminalFontSize.toFloat(),
+                                    fontFamily = getTerminalFontFamily(terminalFont),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    onTap = {
+                                        focusRequester.requestFocus()
+                                        keyboardController?.show()
+                                    },
+                                    onDoubleTap = {
+                                        // Double tap to toggle fullscreen panel
+                                        viewModel.togglePanelFullscreen()
+                                    },
+                                    onPinchIn = {
+                                        // Pinch in (fingers together) -> zoom in to single panel
+                                        viewModel.enterPanelFullscreen()
+                                    },
+                                    onPinchOut = {
+                                        // Pinch out (fingers apart) -> zoom out to show all panels
+                                        viewModel.exitPanelFullscreen()
+                                    },
+                                    onSwipeLeft = {
+                                        // Swipe left -> next panel
+                                        viewModel.focusNextPanel()
+                                    },
+                                    onSwipeRight = {
+                                        // Swipe right -> previous panel
+                                        viewModel.focusPreviousPanel()
+                                    },
+                                    // Vertical swipe is now used for scrolling within panel (viewing history)
+                                    // Panel up/down navigation removed to avoid conflict with scroll gesture
+                                    onTwoFingerSwipeLeft = {
+                                        // Two-finger swipe left -> next tab
+                                        viewModel.goToNextTab()
+                                    },
+                                    onTwoFingerSwipeRight = {
+                                        // Two-finger swipe right -> previous tab
+                                        viewModel.goToPreviousTab()
+                                    },
+                                    onThreeFingerTap = {
+                                        // Three-finger tap -> toggle floating panes
+                                        viewModel.toggleFloatingPanes()
+                                    },
+                                    onSendInput = viewModel::sendInput,
+                                    onSizeChanged = { cols, rows ->
+                                        // Resize terminal when canvas size changes
+                                        viewModel.resize(cols, rows)
+                                    }
+                                )
 
-                    // Hidden input field for keyboard (supports IME for Chinese, etc.)
-                    BasicTextField(
-                        value = inputText,
-                        onValueChange = { newText ->
-                            if (newText.length > inputText.length) {
-                                val newChars = newText.substring(inputText.length)
-                                viewModel.sendInput(newChars)
-                            }
-                            inputText = ""
-                        },
-                        modifier = Modifier
-                            .focusRequester(focusRequester)
-                            .size(1.dp)
-                            .onKeyEvent { keyEvent ->
-                                when (keyEvent.key) {
-                                    Key.Backspace -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_BACKSPACE)
-                                        true
-                                    }
-                                    Key.Enter -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_ENTER)
-                                        true
-                                    }
-                                    Key.DirectionUp -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_UP)
-                                        true
-                                    }
-                                    Key.DirectionDown -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_DOWN)
-                                        true
-                                    }
-                                    Key.DirectionLeft -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_LEFT)
-                                        true
-                                    }
-                                    Key.DirectionRight -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_RIGHT)
-                                        true
-                                    }
-                                    Key.Tab -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_TAB)
-                                        true
-                                    }
-                                    Key.Escape -> {
-                                        viewModel.sendKey(TerminalViewModel.KEY_ESCAPE)
-                                        true
-                                    }
-                                    else -> false
+                                // Minimap (VS Code style) - only show in landscape mode
+                                // In portrait mode, terminal needs full width for better Zellij compatibility
+                                if (isLandscapeMode) {
+                                    TerminalMinimap(
+                                        emulator = viewModel.emulator,
+                                        colorScheme = TerminalColorScheme.Dark,
+                                        width = 80
+                                    )
                                 }
-                            },
-                        textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
-                        cursorBrush = SolidColor(Color.Transparent),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-                    )
+                            }
 
-                    // Quick keyboard bar
-                    QuickKeyboardBar(
-                        onKey = viewModel::sendKey,
-                        onCtrlKey = viewModel::sendCtrlKey
-                    )
+                            // Hidden input field for keyboard (supports IME for Chinese, etc.)
+                            BasicTextField(
+                                value = inputText,
+                                onValueChange = { newText ->
+                                    if (newText.length > inputText.length) {
+                                        val newChars = newText.substring(inputText.length)
+                                        viewModel.sendInput(newChars)
+                                    }
+                                    inputText = ""
+                                },
+                                modifier = Modifier
+                                    .focusRequester(focusRequester)
+                                    .size(1.dp)
+                                    .onKeyEvent { keyEvent ->
+                                        when (keyEvent.key) {
+                                            Key.Backspace -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_BACKSPACE)
+                                                true
+                                            }
+                                            Key.Enter -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_ENTER)
+                                                true
+                                            }
+                                            Key.DirectionUp -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_UP)
+                                                true
+                                            }
+                                            Key.DirectionDown -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_DOWN)
+                                                true
+                                            }
+                                            Key.DirectionLeft -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_LEFT)
+                                                true
+                                            }
+                                            Key.DirectionRight -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_RIGHT)
+                                                true
+                                            }
+                                            Key.Tab -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_TAB)
+                                                true
+                                            }
+                                            Key.Escape -> {
+                                                viewModel.sendKey(TerminalViewModel.KEY_ESCAPE)
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    },
+                                textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
+                                cursorBrush = SolidColor(Color.Transparent),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                            )
+
+                            // Termius-style keyboard bar (hidden in landscape mode)
+                            if (!isLandscapeMode && keyboardStyle in listOf(
+                                    UserPreferences.KEYBOARD_STYLE_TERMIUS,
+                                    UserPreferences.KEYBOARD_STYLE_BOTH
+                                )) {
+                                TermiusStyleKeyboard(
+                                    onKey = viewModel::sendKey,
+                                    onCtrlKey = viewModel::sendCtrlKey,
+                                    onSendInput = viewModel::sendInput
+                                )
+                            }
+                        }
+
+                        // Path-style floating keyboard (available in all orientations)
+                        if (keyboardStyle in listOf(
+                                UserPreferences.KEYBOARD_STYLE_PATH,
+                                UserPreferences.KEYBOARD_STYLE_BOTH
+                            )) {
+                            PathStyleKeyboard(
+                                onKey = viewModel::sendKey,
+                                onCtrlKey = viewModel::sendCtrlKey,
+                                onSendInput = viewModel::sendInput,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
                 }
 
                 is SshConnectionState.Disconnected -> {
@@ -535,53 +618,5 @@ private fun ConnectionErrorView(
             Spacer(modifier = Modifier.width(8.dp))
             Text("重试连接")
         }
-    }
-}
-
-@Composable
-private fun QuickKeyboardBar(
-    onKey: (Int) -> Unit,
-    onCtrlKey: (Char) -> Unit
-) {
-    Surface(
-        color = Color(0xFF2D2D2D),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            KeyButton("Esc") { onKey(TerminalViewModel.KEY_ESCAPE) }
-            KeyButton("Tab") { onKey(TerminalViewModel.KEY_TAB) }
-            KeyButton("Ctrl") { /* Toggle ctrl mode */ }
-
-            IconButton(onClick = { onKey(TerminalViewModel.KEY_UP) }) {
-                Icon(Icons.Default.KeyboardArrowUp, "Up", tint = Color.White)
-            }
-            IconButton(onClick = { onKey(TerminalViewModel.KEY_DOWN) }) {
-                Icon(Icons.Default.KeyboardArrowDown, "Down", tint = Color.White)
-            }
-            IconButton(onClick = { onKey(TerminalViewModel.KEY_LEFT) }) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Left", tint = Color.White)
-            }
-            IconButton(onClick = { onKey(TerminalViewModel.KEY_RIGHT) }) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Right", tint = Color.White)
-            }
-        }
-    }
-}
-
-@Composable
-private fun KeyButton(
-    text: String,
-    onClick: () -> Unit
-) {
-    FilledTonalButton(
-        onClick = onClick,
-        modifier = Modifier.height(36.dp)
-    ) {
-        Text(text, fontSize = 12.sp)
     }
 }

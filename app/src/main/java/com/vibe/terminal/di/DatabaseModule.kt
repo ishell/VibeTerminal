@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.vibe.terminal.data.local.dao.ConversationDao
 import com.vibe.terminal.data.local.dao.MachineDao
 import com.vibe.terminal.data.local.dao.ProjectDao
+import com.vibe.terminal.data.local.dao.TaskCompletionDao
 import com.vibe.terminal.data.local.database.VibeDatabase
 import com.vibe.terminal.data.security.DatabaseKeyManager
 import dagger.Module
@@ -25,6 +26,41 @@ object DatabaseModule {
         override fun migrate(db: SupportSQLiteDatabase) {
             // 添加 lastOffset 字段用于增量同步
             db.execSQL("ALTER TABLE conversation_files ADD COLUMN lastOffset INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    private val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 添加 assistantType 字段用于区分 Claude Code 和 OpenCode
+            db.execSQL("ALTER TABLE projects ADD COLUMN assistantType TEXT NOT NULL DEFAULT 'CLAUDE_CODE'")
+        }
+    }
+
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 创建任务完成状态表
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS task_completions (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    projectId TEXT NOT NULL,
+                    taskHash TEXT NOT NULL,
+                    taskContent TEXT NOT NULL,
+                    isCompleted INTEGER NOT NULL DEFAULT 0,
+                    completedAt INTEGER,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+                )
+            """)
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_task_completions_projectId ON task_completions(projectId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_task_completions_taskHash ON task_completions(taskHash)")
+        }
+    }
+
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 添加 isDeleted 字段用于软删除任务
+            db.execSQL("ALTER TABLE task_completions ADD COLUMN isDeleted INTEGER NOT NULL DEFAULT 0")
         }
     }
 
@@ -99,7 +135,7 @@ object DatabaseModule {
             "vibe_terminal.db"
         )
         .openHelperFactory(SupportOpenHelperFactory(passphrase))
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
         .fallbackToDestructiveMigration()
         .build()
     }
@@ -117,5 +153,10 @@ object DatabaseModule {
     @Provides
     fun provideConversationDao(database: VibeDatabase): ConversationDao {
         return database.conversationDao()
+    }
+
+    @Provides
+    fun provideTaskCompletionDao(database: VibeDatabase): TaskCompletionDao {
+        return database.taskCompletionDao()
     }
 }

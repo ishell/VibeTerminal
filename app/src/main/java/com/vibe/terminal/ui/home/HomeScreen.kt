@@ -1,5 +1,8 @@
 package com.vibe.terminal.ui.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,13 +17,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,6 +42,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,9 +54,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vibe.terminal.data.ssh.HostKeyStatus
+import com.vibe.terminal.domain.model.AssistantType
 import com.vibe.terminal.domain.model.Machine
 import com.vibe.terminal.domain.model.Project
 import com.vibe.terminal.ui.theme.StatusConnected
@@ -131,6 +145,8 @@ fun HomeScreen(
             machines = uiState.machines,
             dialogState = dialogState,
             onFetchSessions = viewModel::fetchZellijSessions,
+            onAcceptHostKey = viewModel::acceptHostKeyAndFetchSessions,
+            onRejectHostKey = viewModel::rejectHostKey,
             onDismiss = viewModel::hideNewProjectDialog,
             onCreate = viewModel::createProject
         )
@@ -311,15 +327,28 @@ private fun NewProjectDialog(
     machines: List<Machine>,
     dialogState: NewProjectDialogState,
     onFetchSessions: (Machine) -> Unit,
+    onAcceptHostKey: () -> Unit,
+    onRejectHostKey: () -> Unit,
     onDismiss: () -> Unit,
-    onCreate: (name: String, machineId: String, zellijSession: String, workingDirectory: String) -> Unit
+    onCreate: (name: String, machineId: String, zellijSession: String, workingDirectory: String, assistantType: AssistantType) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var zellijSession by remember { mutableStateOf("") }
-    var workingDirectory by remember { mutableStateOf("") }
+    var workingDirectory by remember { mutableStateOf("~/VibeCode") }  // 默认目录
     var selectedMachine by remember { mutableStateOf(machines.firstOrNull()) }
     var machineExpanded by remember { mutableStateOf(false) }
     var sessionExpanded by remember { mutableStateOf(false) }
+
+    // Show host key verification dialog if needed
+    if (dialogState.hostKeyStatus != null) {
+        HostKeyVerificationDialog(
+            status = dialogState.hostKeyStatus,
+            hostAddress = dialogState.pendingMachine?.let { "${it.host}:${it.port}" } ?: "",
+            onAccept = onAcceptHostKey,
+            onReject = onRejectHostKey
+        )
+        return
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -335,20 +364,7 @@ private fun NewProjectDialog(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Working Directory (for Claude Code history)
-                OutlinedTextField(
-                    value = workingDirectory,
-                    onValueChange = { workingDirectory = it },
-                    label = { Text("Working Directory") },
-                    placeholder = { Text("/home/user/project") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = {
-                        Text("Full path for Claude Code history")
-                    }
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
+                // Machine 选择
                 ExposedDropdownMenuBox(
                     expanded = machineExpanded,
                     onExpandedChange = { machineExpanded = !machineExpanded }
@@ -432,8 +448,8 @@ private fun NewProjectDialog(
                                         },
                                         onClick = {
                                             zellijSession = session
-                                            // Auto-fill working directory if available
-                                            if (sessionCwd != null) {
+                                            // Auto-fill working directory if available, otherwise keep default
+                                            if (!sessionCwd.isNullOrBlank()) {
                                                 workingDirectory = sessionCwd
                                             }
                                             sessionExpanded = false
@@ -482,13 +498,34 @@ private fun NewProjectDialog(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Working Directory
+                OutlinedTextField(
+                    value = workingDirectory,
+                    onValueChange = { workingDirectory = it },
+                    label = { Text("Working Directory") },
+                    placeholder = { Text("~/VibeCode") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // AI Assistant 自动检测提示
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "AI Assistant will be auto-detected (Claude Code / OpenCode / Codex)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     selectedMachine?.let {
-                        onCreate(name, it.id, zellijSession, workingDirectory)
+                        // 使用 BOTH 自动检测两种格式
+                        onCreate(name, it.id, zellijSession, workingDirectory, AssistantType.BOTH)
                     }
                 },
                 enabled = name.isNotBlank() && zellijSession.isNotBlank() && workingDirectory.isNotBlank() && selectedMachine != null
@@ -499,6 +536,174 @@ private fun NewProjectDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
+            }
+        }
+    )
+}
+
+/**
+ * Host Key Verification Dialog
+ */
+@Composable
+private fun HostKeyVerificationDialog(
+    status: HostKeyStatus,
+    hostAddress: String,
+    onAccept: () -> Unit,
+    onReject: () -> Unit
+) {
+    val isChanged = status is HostKeyStatus.Changed
+
+    AlertDialog(
+        onDismissRequest = onReject,
+        icon = {
+            Icon(
+                imageVector = if (isChanged) Icons.Default.Warning else Icons.Default.Security,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = if (isChanged) MaterialTheme.colorScheme.error else Color(0xFF2196F3)
+            )
+        },
+        title = {
+            Text(
+                text = if (isChanged) "主机密钥已更改" else "未知主机",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column {
+                if (isChanged) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "警告：此主机的密钥已更改！这可能表示存在安全风险（中间人攻击）。\n\n请确认此更改是预期的（如服务器重装）后再继续。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "首次连接到此主机，请验证以下指纹是否正确：",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Host address
+                Text(
+                    text = "主机地址",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = hostAddress,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Fingerprint info
+                when (status) {
+                    is HostKeyStatus.Unknown -> {
+                        Text(
+                            text = "算法",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = status.algorithm,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "指纹",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = status.fingerprint,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+                    is HostKeyStatus.Changed -> {
+                        Text(
+                            text = "原指纹",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = status.oldFingerprint,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "新指纹",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFF4CAF50)
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = status.newFingerprint,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+                    is HostKeyStatus.Verified -> {
+                        // Shouldn't happen in this dialog
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onAccept,
+                colors = if (isChanged) {
+                    androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    androidx.compose.material3.ButtonDefaults.buttonColors()
+                }
+            ) {
+                Text(if (isChanged) "接受新密钥" else "信任此主机")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onReject) {
+                Text("拒绝")
             }
         }
     )

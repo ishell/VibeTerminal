@@ -27,6 +27,7 @@ data class ProjectEntity(
     val machineId: String,
     val zellijSession: String,
     val workingDirectory: String = "~",
+    val assistantType: String = "CLAUDE_CODE",  // CLAUDE_CODE or OPENCODE
     val lastConnected: Long = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()

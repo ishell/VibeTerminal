@@ -119,6 +119,39 @@ class TerminalEmulator(
     val isScrolledBack: Boolean get() = _scrollOffset > 0
 
     /**
+     * 获取绝对位置的单元格 (用于 minimap)
+     * @param absoluteRow 绝对行号 (0 = scrollback最开始, scrollbackSize = 当前屏幕第一行)
+     * @param col 列号
+     */
+    fun getCellAbsolute(absoluteRow: Int, col: Int): TerminalCell {
+        return synchronized(buffer) {
+            val scrollbackSize = buffer.getScrollbackSize()
+            if (absoluteRow < scrollbackSize) {
+                // 在滚动历史中
+                val scrollbackRow = buffer.getScrollbackLine(absoluteRow)
+                scrollbackRow?.get(col) ?: TerminalCell.EMPTY
+            } else {
+                // 在当前屏幕中
+                val screenRow = absoluteRow - scrollbackSize
+                buffer.getCell(screenRow, col)
+            }
+        }
+    }
+
+    /**
+     * 设置滚动位置 (用于 minimap 点击跳转)
+     */
+    fun setScrollOffset(offset: Int) {
+        synchronized(buffer) {
+            val newOffset = offset.coerceIn(0, buffer.getScrollbackSize())
+            if (newOffset != _scrollOffset) {
+                _scrollOffset = newOffset
+                notifyUpdate()
+            }
+        }
+    }
+
+    /**
      * 调整大小
      */
     fun resize(newColumns: Int, newRows: Int) {

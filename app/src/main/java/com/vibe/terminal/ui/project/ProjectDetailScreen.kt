@@ -3,6 +3,7 @@ package com.vibe.terminal.ui.project
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,15 +19,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.Topic
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,9 +45,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,13 +68,20 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.terminal.data.conversation.ConversationParser
 import com.vibe.terminal.domain.model.ConversationSession
 import com.vibe.terminal.domain.model.ConversationTopic
+import com.vibe.terminal.domain.model.ProjectRoadmap
+import com.vibe.terminal.domain.model.RoadmapGroup
+import com.vibe.terminal.domain.model.RoadmapSection
+import com.vibe.terminal.domain.model.RoadmapTask
+import com.vibe.terminal.domain.model.TaskSource
+import com.vibe.terminal.domain.model.TaskStatus
 import com.vibe.terminal.ui.theme.StatusConnected
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 enum class TopicViewMode {
     BY_TIME,     // 按时间间隔分组（20分钟）
-    BY_SESSION   // 按会话断点分组（parentUuid）
+    BY_SESSION,  // 按会话断点分组（parentUuid）
+    ROADMAP      // 项目路线图
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,7 +92,16 @@ fun ProjectDetailScreen(
     onNavigateToTerminal: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val smartParsingEnabled by viewModel.smartParsingEnabled.collectAsState()
     var viewMode by remember { mutableStateOf(TopicViewMode.BY_SESSION) }
+    var isTerminalPreviewCollapsed by remember { mutableStateOf(false) }
+
+    // Load roadmap when switching to ROADMAP view
+    LaunchedEffect(viewMode) {
+        if (viewMode == TopicViewMode.ROADMAP && uiState.roadmap == null && !uiState.isRoadmapLoading) {
+            viewModel.loadRoadmap()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -147,12 +171,15 @@ fun ProjectDetailScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
 
-            // 终端预览
+            // 终端预览 - 可折叠
             if (uiState.sessions.isNotEmpty()) {
                 com.vibe.terminal.ui.conversation.TerminalPreview(
                     sessions = uiState.sessions,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    maxLines = 6
+                    maxLines = 6,
+                    assistantType = uiState.project?.assistantType ?: com.vibe.terminal.domain.model.AssistantType.CLAUDE_CODE,
+                    isCollapsed = isTerminalPreviewCollapsed,
+                    onToggleCollapse = { isTerminalPreviewCollapsed = !isTerminalPreviewCollapsed }
                 )
             }
 
@@ -266,18 +293,35 @@ fun ProjectDetailScreen(
 
                         // 根据模式生成主题列表
                         // 使用 sessions.size 作为额外的 key 确保列表更新时重新计算
-                        val topics = remember(uiState.sessions, uiState.sessions.size, viewMode) {
-                            when (viewMode) {
-                                TopicViewMode.BY_TIME -> ConversationParser.groupByTimeGap(uiState.sessions)
-                                TopicViewMode.BY_SESSION -> ConversationParser.groupBySessionBreaks(uiState.sessions)
+                        if (viewMode == TopicViewMode.ROADMAP) {
+                            RoadmapView(
+                                roadmap = uiState.roadmap,
+                                isLoading = uiState.isRoadmapLoading,
+                                error = uiState.roadmapError,
+                                onRetry = { viewModel.loadRoadmap() },
+                                onToggleCompletion = { task -> viewModel.toggleTaskCompletion(task) },
+                                onDeleteTask = { task -> viewModel.deleteTask(task) },
+                                smartParsingEnabled = smartParsingEnabled,
+                                onSmartParsingToggle = { viewModel.setSmartParsingEnabled(it) },
+                                onScrollStart = { isTerminalPreviewCollapsed = true },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            val topics = remember(uiState.sessions, uiState.sessions.size, viewMode) {
+                                when (viewMode) {
+                                    TopicViewMode.BY_TIME -> ConversationParser.groupByTimeGap(uiState.sessions)
+                                    TopicViewMode.BY_SESSION -> ConversationParser.groupBySessionBreaks(uiState.sessions)
+                                    TopicViewMode.ROADMAP -> emptyList() // Handled above
+                                }
                             }
-                        }
 
-                        TopicListView(
-                            topics = topics,
-                            viewMode = viewMode,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                            TopicListView(
+                                topics = topics,
+                                viewMode = viewMode,
+                                onScrollStart = { isTerminalPreviewCollapsed = true },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
@@ -365,6 +409,21 @@ private fun ViewModeSelector(
                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
             )
         )
+        FilterChip(
+            selected = currentMode == TopicViewMode.ROADMAP,
+            onClick = { onModeChange(TopicViewMode.ROADMAP) },
+            label = { Text("路线图") },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.TaskAlt,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        )
     }
 }
 
@@ -372,10 +431,20 @@ private fun ViewModeSelector(
 private fun TopicListView(
     topics: List<ConversationTopic>,
     viewMode: TopicViewMode,
+    onScrollStart: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val dateFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
         .withZone(ZoneId.systemDefault())
+
+    val listState = rememberLazyListState()
+
+    // 检测滚动开始并自动折叠终端预览
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            onScrollStart()
+        }
+    }
 
     Column(modifier = modifier) {
         // 统计信息
@@ -387,6 +456,7 @@ private fun TopicListView(
                 text = when (viewMode) {
                     TopicViewMode.BY_SESSION -> "${topics.size} 个会话段"
                     TopicViewMode.BY_TIME -> "${topics.size} 个时间段 (20分钟间隔)"
+                    TopicViewMode.ROADMAP -> "" // Not displayed in this view
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -395,6 +465,7 @@ private fun TopicListView(
         }
 
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -898,5 +969,653 @@ private fun FeatureChip(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
             fontSize = 9.sp
         )
+    }
+}
+
+// ==================== Roadmap View Components ====================
+
+@Composable
+private fun RoadmapView(
+    roadmap: ProjectRoadmap?,
+    isLoading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onToggleCompletion: (RoadmapTask) -> Unit,
+    onDeleteTask: (RoadmapTask) -> Unit,
+    smartParsingEnabled: Boolean,
+    onSmartParsingToggle: (Boolean) -> Unit,
+    onScrollStart: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    when {
+        isLoading -> {
+            Box(
+                modifier = modifier,
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "正在加载路线图...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        error != null -> {
+            Box(
+                modifier = modifier,
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Surface(
+                        onClick = onRetry,
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "重试",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+        }
+        roadmap == null || roadmap.groups.isEmpty() -> {
+            Box(
+                modifier = modifier,
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.TaskAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "暂无路线图数据",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "请在项目中添加 CLAUDE.md 文件\n或使用 TodoWrite 工具创建任务",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        }
+        else -> {
+            RoadmapContent(
+                roadmap = roadmap,
+                onToggleCompletion = onToggleCompletion,
+                onDeleteTask = onDeleteTask,
+                smartParsingEnabled = smartParsingEnabled,
+                onSmartParsingToggle = onSmartParsingToggle,
+                onScrollStart = onScrollStart,
+                modifier = modifier
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoadmapContent(
+    roadmap: ProjectRoadmap,
+    onToggleCompletion: (RoadmapTask) -> Unit,
+    onDeleteTask: (RoadmapTask) -> Unit,
+    smartParsingEnabled: Boolean,
+    onSmartParsingToggle: (Boolean) -> Unit,
+    onScrollStart: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val dateFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+        .withZone(ZoneId.systemDefault())
+
+    val listState = rememberLazyListState()
+
+    // 检测滚动开始并自动折叠终端预览
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            onScrollStart()
+        }
+    }
+
+    Column(modifier = modifier) {
+        // Progress summary
+        RoadmapProgressHeader(
+            roadmap = roadmap,
+            smartParsingEnabled = smartParsingEnabled,
+            onSmartParsingToggle = onSmartParsingToggle
+        )
+
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(roadmap.groups, key = { it.id }) { group ->
+                RoadmapGroupCard(
+                    group = group,
+                    dateFormatter = dateFormatter,
+                    onToggleCompletion = onToggleCompletion,
+                    onDeleteTask = onDeleteTask,
+                    smartParsingEnabled = smartParsingEnabled
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoadmapProgressHeader(
+    roadmap: ProjectRoadmap,
+    smartParsingEnabled: Boolean,
+    onSmartParsingToggle: (Boolean) -> Unit
+) {
+    val statusCounts = roadmap.getStatusCounts()
+    val totalTasks = roadmap.getAllTasks().size
+    val completedTasks = statusCounts[TaskStatus.COMPLETED] ?: 0
+    val inProgressTasks = statusCounts[TaskStatus.IN_PROGRESS] ?: 0
+    val pendingTasks = statusCounts[TaskStatus.PENDING] ?: 0
+    val progressPercent = roadmap.getProgressPercentage()
+
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "项目进度",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "${progressPercent.toInt()}%",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Progress bar
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp),
+                shape = RoundedCornerShape(4.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Box {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth(progressPercent / 100f)
+                            .height(8.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        color = StatusConnected
+                    ) {}
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Status counts and smart parsing toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Status counts
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    StatusCount("已完成", completedTasks, StatusConnected)
+                    StatusCount("进行中", inProgressTasks, Color(0xFFFF9800))
+                    StatusCount("待处理", pendingTasks, MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                // Smart parsing toggle
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "智能解析",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = smartParsingEnabled,
+                        onCheckedChange = onSmartParsingToggle,
+                        modifier = Modifier.height(20.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusCount(label: String, count: Int, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            modifier = Modifier.size(8.dp),
+            shape = RoundedCornerShape(4.dp),
+            color = color
+        ) {}
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "$label: $count",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun RoadmapGroupCard(
+    group: RoadmapGroup,
+    dateFormatter: DateTimeFormatter,
+    onToggleCompletion: (RoadmapTask) -> Unit,
+    onDeleteTask: (RoadmapTask) -> Unit,
+    smartParsingEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(true) }
+    // 总任务数包含直接任务和 sections 中的任务
+    val totalTaskCount = group.tasks.size + group.sections.sumOf { it.tasks.size }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Group header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val sourceIcon = when (group.source) {
+                    TaskSource.CLAUDE_MD -> "📄"
+                    TaskSource.OPENCODE_MD -> "📋"
+                    TaskSource.ROADMAP_FILE -> "🗺️"
+                    TaskSource.TODO_WRITE -> "✏️"
+                    TaskSource.CONVERSATION -> "💬"
+                    null -> "📁"
+                }
+                Text(
+                    text = sourceIcon,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = group.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (group.description.isNotBlank()) {
+                        Text(
+                            text = group.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Text(
+                    text = "$totalTaskCount",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Tasks list (包括直接任务和 sections)
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 直接任务（无 section 的任务）
+                    group.tasks.forEachIndexed { index, task ->
+                        RoadmapTaskItem(
+                            task = task,
+                            dateFormatter = dateFormatter,
+                            onToggleCompletion = onToggleCompletion,
+                            onDeleteTask = onDeleteTask,
+                            smartParsingEnabled = smartParsingEnabled
+                        )
+                        if (index < group.tasks.size - 1 || group.sections.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+
+                    // Sections（如 1.1, 1.2 等子分组）
+                    group.sections.forEachIndexed { sectionIndex, section ->
+                        RoadmapSectionCard(
+                            section = section,
+                            dateFormatter = dateFormatter,
+                            onToggleCompletion = onToggleCompletion,
+                            onDeleteTask = onDeleteTask,
+                            smartParsingEnabled = smartParsingEnabled
+                        )
+                        if (sectionIndex < group.sections.size - 1) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Section 子分组卡片（如 1.1 项目初始化）
+ */
+@Composable
+private fun RoadmapSectionCard(
+    section: RoadmapSection,
+    dateFormatter: DateTimeFormatter,
+    onToggleCompletion: (RoadmapTask) -> Unit,
+    onDeleteTask: (RoadmapTask) -> Unit,
+    smartParsingEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(true) }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Section header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Section number badge
+                if (section.number.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = section.number,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
+                Text(
+                    text = section.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Text(
+                    text = "${section.tasks.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Section tasks
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    section.tasks.forEachIndexed { index, task ->
+                        RoadmapTaskItem(
+                            task = task,
+                            dateFormatter = dateFormatter,
+                            onToggleCompletion = onToggleCompletion,
+                            onDeleteTask = onDeleteTask,
+                            smartParsingEnabled = smartParsingEnabled
+                        )
+                        if (index < section.tasks.size - 1) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoadmapTaskItem(
+    task: RoadmapTask,
+    dateFormatter: DateTimeFormatter,
+    onToggleCompletion: (RoadmapTask) -> Unit,
+    onDeleteTask: (RoadmapTask) -> Unit,
+    smartParsingEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var showRelatedSessions by remember { mutableStateOf(false) }
+
+    // 使用有效状态（本地完成优先）
+    val effectiveStatus = task.getEffectiveStatus()
+    val statusColor = when (effectiveStatus) {
+        TaskStatus.COMPLETED -> StatusConnected
+        TaskStatus.IN_PROGRESS -> Color(0xFFFF9800)
+        TaskStatus.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant
+        TaskStatus.BLOCKED -> MaterialTheme.colorScheme.error
+    }
+
+    val statusIcon = when (effectiveStatus) {
+        TaskStatus.COMPLETED -> "✓"
+        TaskStatus.IN_PROGRESS -> "◐"
+        TaskStatus.PENDING -> "○"
+        TaskStatus.BLOCKED -> "✕"
+    }
+
+    // 只有当智能解析开启且有关联会话时才可点击
+    val hasRelatedSessions = smartParsingEnabled && task.relatedSessions.isNotEmpty()
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(enabled = hasRelatedSessions) {
+                showRelatedSessions = !showRelatedSessions
+            },
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                // Completion checkbox (clickable status indicator)
+                Surface(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable { onToggleCompletion(task) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (task.isLocallyCompleted) {
+                        StatusConnected.copy(alpha = 0.2f)
+                    } else {
+                        statusColor.copy(alpha = 0.2f)
+                    },
+                    border = if (task.isLocallyCompleted) {
+                        androidx.compose.foundation.BorderStroke(2.dp, StatusConnected)
+                    } else {
+                        null
+                    }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = if (task.isLocallyCompleted) "✓" else statusIcon,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (task.isLocallyCompleted) StatusConnected else statusColor,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (effectiveStatus == TaskStatus.IN_PROGRESS) FontWeight.Bold else FontWeight.Normal,
+                        color = if (effectiveStatus == TaskStatus.COMPLETED) {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        textDecoration = if (task.isLocallyCompleted) {
+                            TextDecoration.LineThrough
+                        } else {
+                            null
+                        }
+                    )
+
+                    if (task.description.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = task.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Metadata row
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (task.createdAt != null) {
+                            Text(
+                                text = dateFormatter.format(task.createdAt),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (smartParsingEnabled && task.relatedSessions.isNotEmpty()) {
+                            FeatureChip(
+                                text = "${task.relatedSessions.size} 关联",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        task.tags.take(2).forEach { tag ->
+                            FeatureChip(text = tag, color = Color(0xFF607D8B))
+                        }
+                    }
+                }
+
+                // Delete button
+                IconButton(
+                    onClick = { onDeleteTask(task) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "删除任务",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+
+            // Related sessions (expandable) - only show when smart parsing is enabled
+            AnimatedVisibility(
+                visible = smartParsingEnabled && showRelatedSessions && task.relatedSessions.isNotEmpty(),
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "关联对话:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    task.relatedSessions.take(3).forEach { session ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(
+                                    text = session.matchedText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    text = dateFormatter.format(session.timestamp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

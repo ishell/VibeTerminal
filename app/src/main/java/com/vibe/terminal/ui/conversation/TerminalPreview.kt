@@ -1,7 +1,12 @@
 package com.vibe.terminal.ui.conversation
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vibe.terminal.domain.model.AssistantType
 import com.vibe.terminal.domain.model.ConversationSegment
 import com.vibe.terminal.domain.model.ConversationSession
 
@@ -47,12 +54,16 @@ private val TerminalPrompt = Color(0xFF9CDCFE)
 
 /**
  * 终端预览组件 - 以终端风格展示 Claude Code 历史记录
+ * 支持折叠/展开功能
  */
 @Composable
 fun TerminalPreview(
     sessions: List<ConversationSession>,
     modifier: Modifier = Modifier,
-    maxLines: Int = 12
+    maxLines: Int = 12,
+    assistantType: AssistantType = AssistantType.CLAUDE_CODE,
+    isCollapsed: Boolean = false,
+    onToggleCollapse: () -> Unit = {}
 ) {
     Surface(
         modifier = modifier
@@ -63,56 +74,98 @@ fun TerminalPreview(
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            // 终端标题栏
-            TerminalTitleBar()
+            // 终端标题栏 - 可点击折叠
+            TerminalTitleBar(
+                assistantType = assistantType,
+                isCollapsed = isCollapsed,
+                onToggleCollapse = onToggleCollapse,
+                sessionCount = sessions.flatMap { it.segments }.size
+            )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // 可折叠的内容区域
+            AnimatedVisibility(
+                visible = !isCollapsed,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
 
-            // 终端内容
-            if (sessions.isEmpty()) {
-                TerminalEmptyState()
-            } else {
-                TerminalContent(sessions, maxLines)
+                    // 终端内容
+                    if (sessions.isEmpty()) {
+                        TerminalEmptyState()
+                    } else {
+                        TerminalContent(sessions, maxLines)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun TerminalTitleBar() {
+private fun TerminalTitleBar(
+    assistantType: AssistantType,
+    isCollapsed: Boolean,
+    onToggleCollapse: () -> Unit,
+    sessionCount: Int
+) {
+    // 根据助手类型生成标题
+    val titleText = when (assistantType) {
+        AssistantType.CLAUDE_CODE -> "claude-code — history"
+        AssistantType.OPENCODE -> "opencode — history"
+        AssistantType.CODEX -> "codex — history"
+        AssistantType.BOTH -> "ai assistant — history"
+    }
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null, // 不显示点击波纹效果
+                onClick = onToggleCollapse
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 窗口按钮
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color(0xFFFF5F56))
-            )
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color(0xFFFFBD2E))
-            )
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color(0xFF27C93F))
-            )
-        }
+        // Bash 提示符
+        Text(
+            text = "$",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = TerminalGreen
+        )
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(8.dp))
 
         Text(
-            text = "claude-code — history",
+            text = titleText,
             style = MaterialTheme.typography.labelSmall,
             fontFamily = FontFamily.Monospace,
             color = TerminalGray,
+            fontSize = 10.sp,
+            modifier = Modifier.weight(1f)
+        )
+
+        // 折叠状态下显示会话数量
+        if (isCollapsed && sessionCount > 0) {
+            Text(
+                text = "[$sessionCount]",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = TerminalGreen,
+                fontSize = 10.sp
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // 折叠/展开提示文本
+        Text(
+            text = if (isCollapsed) "▶" else "▼",
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = TerminalYellow.copy(alpha = 0.8f),
             fontSize = 10.sp
         )
     }
