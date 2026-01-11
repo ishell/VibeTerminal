@@ -10,5 +10,5 @@
     <exclude domain="sharedpref" path="." />
     <exclude domain="file" path="." />
     <exclude domain="external" path="." />
-    <exclude domain="no_backup" path="." />
+    <exclude domain="root" path="." />
 </full-backup-content>

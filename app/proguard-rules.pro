@@ -20,9 +20,21 @@
 
 # EdDSA
 -keep class net.i2p.crypto.eddsa.** { *; }
+-dontwarn sun.security.x509.X509Key
 
 # SLF4J
 -dontwarn org.slf4j.**
+
+# GSSAPI/Kerberos (not available on Android, used by sshj optionally)
+-dontwarn javax.security.auth.login.**
+-dontwarn org.ietf.jgss.**
+
+# Google Error Prone annotations (compile-time only, used by Tink)
+-dontwarn com.google.errorprone.annotations.**
+
+# Google Crypto Tink
+-keep class com.google.crypto.tink.** { *; }
+-dontwarn com.google.crypto.tink.**
 
 # ============ Database ============
 
