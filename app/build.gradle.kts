@@ -85,6 +85,17 @@ android {
             excludes += "/META-INF/DEPENDENCIES"
         }
     }
+
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val versionName = variant.versionName
+            val flavor = variant.flavorName
+            val buildType = variant.buildType.name
+            output.outputFileName = "VibeTerminal-v${versionName}-${flavor}-${buildType}.apk"
+        }
+    }
 }
 
 dependencies {
