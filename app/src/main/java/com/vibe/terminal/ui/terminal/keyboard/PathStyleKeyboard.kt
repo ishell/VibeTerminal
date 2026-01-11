@@ -272,10 +272,10 @@ fun PathStyleKeyboard(
     }
 }
 
-// Key codes (same as TerminalViewModel)
-private const val KEY_ESCAPE = 1
-private const val KEY_TAB = 2
-private const val KEY_UP = 3
-private const val KEY_DOWN = 4
-private const val KEY_LEFT = 5
-private const val KEY_RIGHT = 6
+// Key codes (must match TerminalViewModel)
+private const val KEY_TAB = 3
+private const val KEY_ESCAPE = 4
+private const val KEY_UP = 5
+private const val KEY_DOWN = 6
+private const val KEY_RIGHT = 7
+private const val KEY_LEFT = 8
