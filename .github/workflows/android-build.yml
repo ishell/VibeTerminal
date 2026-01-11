@@ -71,11 +71,20 @@ jobs:
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       run: ./gradlew assembleGithubRelease
 
-    - name: Get version name
+    - name: Get version from tag
       id: version
       run: |
-        VERSION_NAME=$(grep "versionName" app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
-        echo "version=$VERSION_NAME" >> $GITHUB_OUTPUT
+        # Extract version from tag (v0.1.1 -> 0.1.1)
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+    - name: Rename APK with tag version
+      run: |
+        cd app/build/outputs/apk/github/release
+        OLD_APK=$(ls VibeTerminal-*.apk)
+        NEW_APK="VibeTerminal-v${{ steps.version.outputs.version }}-github-release.apk"
+        mv "$OLD_APK" "$NEW_APK"
+        echo "Renamed $OLD_APK to $NEW_APK"
 
     - name: Upload Release APK
       uses: actions/upload-artifact@v4
